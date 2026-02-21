@@ -1,9 +1,11 @@
 import express from "express";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom } from "./db";
-import { RoomId } from "./types";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript } from "./db";
+import { RoomId, SessionId } from "./types";
 
 const app = express();
 const port = 3000;
+
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
   res.send("Hello World!");

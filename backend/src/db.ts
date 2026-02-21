@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import "dotenv/config";
 import { UserId, RoomId, SessionId } from "./types";
+import { createSessionFolder, putSessionTranscript as putTranscript, getSessionTranscript as getTranscript } from "./storage";
 
 const password = process.env.SUPABASE_DB_PASSWORD;
 const connectionString = `postgresql://postgres.ajdzgecxzrryyiwznqku:${password}@aws-1-us-east-1.pooler.supabase.com:6543/postgres`;
@@ -21,6 +22,22 @@ export async function getUserByUuid(uuid: string): Promise<UserId | null> {
 export async function getUserByEmail(email: string): Promise<UserId | null> {
   const result = await pool.query("select id from users where email = $1", [email]);
   if (!result.rows[0]) return null;
+  return UserId.create(result.rows[0].id);
+}
+
+export async function createPatientUser(email: string, name: string): Promise<UserId> {
+  const result = await pool.query(
+    "insert into users (email, name, is_clinician) values ($1, $2, false) returning id",
+    [email, name]
+  );
+  return UserId.create(result.rows[0].id);
+}
+
+export async function createClinicianUser(email: string, name: string): Promise<UserId> {
+  const result = await pool.query(
+    "insert into users (email, name, is_clinician) values ($1, $2, true) returning id",
+    [email, name]
+  );
   return UserId.create(result.rows[0].id);
 }
 
@@ -66,13 +83,30 @@ export async function endActiveSession(roomId: RoomId): Promise<void> {
   );
 }
 
-export async function newSession(roomId: RoomId): Promise<SessionId> {
+export async function createSession(roomId: RoomId): Promise<SessionId> {
   await endActiveSession(roomId);
   const result = await pool.query(
     "insert into sessions (room, active) values ($1, true) returning id",
     [roomId.toString()]
   );
-  return SessionId.create(result.rows[0].id);
+  const sessionId = SessionId.create(result.rows[0].id);
+  await createSessionFolder(roomId.toString(), sessionId.toString());
+  return sessionId;
+}
+
+async function getRoomIdFromSession(sessionId: SessionId): Promise<RoomId> {
+  const result = await pool.query("select room from sessions where id = $1", [sessionId.toString()]);
+  return RoomId.create(result.rows[0].room);
+}
+
+export async function putSessionTranscript(sessionId: SessionId, content: string): Promise<void> {
+  const roomId = await getRoomIdFromSession(sessionId);
+  await putTranscript(roomId.toString(), sessionId.toString(), content);
+}
+
+export async function getSessionTranscript(sessionId: SessionId): Promise<string> {
+  const roomId = await getRoomIdFromSession(sessionId);
+  return await getTranscript(roomId.toString(), sessionId.toString());
 }
 
 export async function getAllSessionsDebug(activeOnly?: boolean): Promise<object[]> {
@@ -94,4 +128,9 @@ export async function getSessionsByRoom(roomId: RoomId, activeOnly?: boolean): P
   }
   const result = await pool.query("select id from sessions where room = $1", [roomId.toString()]);
   return result.rows.map(row => SessionId.create(row.id));
+}
+
+export async function getAllRoomsDebug(): Promise<object[]> {
+  const result = await pool.query("select * from rooms");
+  return result.rows;
 }
