@@ -19,7 +19,7 @@ app.get("/debug/user", async (req, res) => {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  res.json(user);
+  res.json({ id: user.toString() });
 });
 
 app.listen(port, () => {
