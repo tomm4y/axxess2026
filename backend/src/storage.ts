@@ -2,24 +2,26 @@ import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
 
 const supabaseUrl = "https://ajdzgecxzrryyiwznqku.supabase.co";
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!supabaseKey) {
-  throw new Error("SUPABASE_ANON_KEY environment variable is required");
+if (!supabaseServiceKey) {
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY environment variable is required");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const BUCKET_NAME = "assets";
 
 export async function createSessionFolder(roomId: string, sessionId: string): Promise<void> {
   const path = `room-${roomId}/session-${sessionId}/.keep`;
-  await supabase.storage.from(BUCKET_NAME).upload(path, new Blob([""]));
+  const { error } = await supabase.storage.from(BUCKET_NAME).upload(path, new Blob([""]));
+  if (error) throw new Error(`Failed to create session folder: ${error.message}`);
 }
 
 export async function putSessionTranscript(roomId: string, sessionId: string, content: string): Promise<void> {
   const path = `room-${roomId}/session-${sessionId}/transcript.txt`;
-  await supabase.storage.from(BUCKET_NAME).upload(path, new Blob([content]), { upsert: true });
+  const { error } = await supabase.storage.from(BUCKET_NAME).upload(path, new Blob([content]), { upsert: true });
+  if (error) throw new Error(`Failed to upload transcript: ${error.message}`);
 }
 
 export async function getSessionTranscript(roomId: string, sessionId: string): Promise<string> {
