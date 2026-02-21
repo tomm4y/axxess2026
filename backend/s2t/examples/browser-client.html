@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>S2T WS Client</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 24px;
+        line-height: 1.4;
+      }
+      code {
+        background: #000000;
+        color: #e6e6e6;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+      pre {
+        background: #0b1020;
+        color: #e6e6e6;
+        padding: 12px;
+        border-radius: 10px;
+        overflow: auto;
+      }
+      button {
+        padding: 10px 14px;
+        margin-right: 8px;
+      }
+      #status {
+        margin: 12px 0;
+      }
+      #log {
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Live transcription test client</h1>
+    <ol>
+      <li>
+        Create a session:
+        <pre><code>curl -s -X POST http://localhost:3001/api/sessions | jq</code></pre>
+      </li>
+      <li>
+        Paste the <code>wsUrl</code> below and click Start.
+      </li>
+    </ol>
+
+    <div>
+      <label>
+        wsUrl:
+        <input id="wsUrl" size="120" placeholder="ws://localhost:3001/ws?sessionId=...&token=..." />
+      </label>
+    </div>
+
+    <div style="margin-top: 12px">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div id="status"></div>
+    <pre id="log"></pre>
+
+    <script type="module">
+      const statusEl = document.getElementById('status')
+      const logEl = document.getElementById('log')
+      const wsUrlEl = document.getElementById('wsUrl')
+      const startBtn = document.getElementById('startBtn')
+      const stopBtn = document.getElementById('stopBtn')
+
+      let ws = null
+      let audioContext = null
+      let source = null
+      let processor = null
+      let micStream = null
+
+      function log(...args) {
+        logEl.textContent += args.join(' ') + '\n'
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text
+      }
+
+      function floatTo16BitPCM(float32Array) {
+        const buffer = new ArrayBuffer(float32Array.length * 2)
+        const view = new DataView(buffer)
+        for (let i = 0; i < float32Array.length; i++) {
+          let s = Math.max(-1, Math.min(1, float32Array[i]))
+          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+        }
+        return buffer
+      }
+
+      function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+        if (outputSampleRate === inputSampleRate) return buffer
+        const ratio = inputSampleRate / outputSampleRate
+        const newLength = Math.round(buffer.length / ratio)
+        const result = new Float32Array(newLength)
+        let offsetResult = 0
+        let offsetBuffer = 0
+        while (offsetResult < result.length) {
+          const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio)
+          let accum = 0
+          let count = 0
+          for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i]
+            count++
+          }
+          result[offsetResult] = accum / count
+          offsetResult++
+          offsetBuffer = nextOffsetBuffer
+        }
+        return result
+      }
+
+      startBtn.onclick = async () => {
+        const wsUrl = wsUrlEl.value.trim()
+        if (!wsUrl) {
+          alert('Paste wsUrl first')
+          return
+        }
+
+        setStatus('Requesting microphone...')
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        source = audioContext.createMediaStreamSource(micStream)
+
+        // ScriptProcessor is deprecated but simplest for a debug client.
+        // For production, use AudioWorklet.
+        processor = audioContext.createScriptProcessor(4096, 1, 1)
+
+        ws = new WebSocket(wsUrl)
+        ws.binaryType = 'arraybuffer'
+
+        ws.onopen = () => {
+          setStatus('WS connected. Starting stream...')
+          ws.send(JSON.stringify({ type: 'start', format: 'linear16', sampleRate: 16000, channels: 1 }))
+
+          source.connect(processor)
+          processor.connect(audioContext.destination)
+
+          stopBtn.disabled = false
+          startBtn.disabled = true
+        }
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data)
+            if (msg.type === 'transcript') {
+              const p = msg.payload
+              log(`[${p.role ?? p.speakerId ?? 'unknown'}] ${p.isFinal ? '(final)' : '(interim)'} ${p.text}`)
+            } else if (msg.type === 'error') {
+              log(`ERROR: ${msg.message}`)
+              console.error(msg)
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        ws.onclose = () => setStatus('WS closed')
+        ws.onerror = (e) => {
+          setStatus('WS error')
+          console.error(e)
+        }
+
+        processor.onaudioprocess = (e) => {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return
+          const input = e.inputBuffer.getChannelData(0)
+          const downsampled = downsampleBuffer(input, audioContext.sampleRate, 16000)
+          ws.send(floatTo16BitPCM(downsampled))
+        }
+      }
+
+      stopBtn.onclick = async () => {
+        stopBtn.disabled = true
+        startBtn.disabled = false
+        try {
+          ws?.send(JSON.stringify({ type: 'stop' }))
+        } catch {}
+        try {
+          ws?.close()
+        } catch {}
+        ws = null
+
+        try {
+          processor?.disconnect()
+          source?.disconnect()
+          audioContext?.close()
+        } catch {}
+
+        processor = null
+        source = null
+        audioContext = null
+
+        try {
+          micStream?.getTracks().forEach((t) => t.stop())
+        } catch {}
+        micStream = null
+      }
+    </script>
+  </body>
+</html>
+
