@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "id": 73635186571,
+      "name": "Bill",
+      "email": "sean.maxwell@gmail.com",
+      "created": "2026-01-28T05:23:46.132Z"
+    },
+    {
+      "id": 438243754038,
+      "name": "John Smith",
+      "email": "john.smith@gmail.com",
+      "created": "2026-01-28T05:23:46.132Z"
+    },
+    {
+      "id": 948123879878,
+      "name": "Gordan Freeman",
+      "email": "gordan.freeman@gmail.com",
+      "created": "2026-01-28T05:23:46.132Z"
+    }
+  ]
+}
