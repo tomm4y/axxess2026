@@ -48,6 +48,46 @@ app.get("/debug/sessions", async (req, res) => {
   res.json(sessions);
 });
 
+app.get("/debug/transcript_maker", async (req, res) => {
+  const rooms = await getAllRoomsDebug();
+  const sessions = await getAllSessionsDebug();
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><title>Transcript Maker</title></head>
+<body>
+  <h1>Transcript Maker</h1>
+  <form method="POST" action="/debug/transcript_maker">
+    <label for="room">Available Rooms:</label><br>
+    <select name="room_id" id="room">
+      ${rooms.map((r: any) => `<option value="${r.id}">${r.id}</option>`).join("")}
+    </select><br><br>
+    <label for="session">Available Sessions:</label><br>
+    <select name="session_id" id="session">
+      ${sessions.map((s: any) => `<option value="${s.id}">${s.id}</option>`).join("")}
+    </select><br><br>
+    <label for="content">Transcript Content:</label><br>
+    <textarea name="content" rows="10" cols="50"></textarea><br><br>
+    <button type="submit">Create Transcript</button>
+  </form>
+</body>
+</html>`;
+
+  res.send(html);
+});
+
+app.post("/debug/transcript_maker", async (req, res) => {
+  const { room_id, session_id, content } = req.body;
+
+  try {
+    const sessionId = SessionId.create(session_id);
+    await putSessionTranscript(sessionId, content);
+    res.send(`<script>alert("Transcript created successfully!"); window.location.href = "/debug/transcript_maker";</script>`);
+  } catch (error) {
+    res.send(`<script>alert("Error: ${error}"); window.location.href = "/debug/transcript_maker";</script>`);
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });
