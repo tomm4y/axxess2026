@@ -1,62 +1,22 @@
 {
   "name": "backend",
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "npm run lint && tsc --project tsconfig.prod.json",
-    "clean-install": "rm -rf ./node_modules && rm -r package-lock.json && npm i",
-    "dev": "DOTENV_CONFIG_PATH=./config/.env.development ts-node ./src/main",
-    "dev:watch": "nodemon --exec \"npm run dev\" --watch ./src --ext .ts",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "start": "DOTENV_CONFIG_PATH=./config/.env.production node -r dotenv/config -r module-alias/register ./dist/main.js",
-    "test": "NODE_ENV=test vitest",
-    "type-check": "tsc -b --noEmit"
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "tsc && node dist/index.js"
   },
-  "engines": {
-    "node": ">=16.0.0"
-  },
-  "_moduleAliases": {
-    "@src": "dist"
-  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
   "dependencies": {
-    "cookie-parser": "^1.4.7",
-    "dayjs": "^1.11.19",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "helmet": "^8.1.0",
-    "jet-env": "^1.1.6",
-    "jet-logger": "^2.2.3",
-    "jet-paths": "^2.0.1",
-    "jet-validators": "^2.3.1",
-    "jsonfile": "^6.2.0",
-    "module-alias": "^2.3.4",
-    "morgan": "^1.10.1"
+    "express": "^5.2.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.3",
-    "@swc/core": "^1.15.11",
-    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
-    "@types/cookie-parser": "^1.4.10",
-    "@types/find": "^0.2.4",
-    "@types/fs-extra": "^11.0.4",
-    "@types/jsonfile": "^6.1.4",
-    "@types/module-alias": "^2.0.4",
-    "@types/morgan": "^1.9.10",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
-    "@types/supertest": "^6.0.3",
-    "eslint": "^9.39.3",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-n": "^17.24.0",
-    "find": "^0.3.0",
-    "fs-extra": "^11.3.3",
-    "jiti": "^2.6.1",
-    "nodemon": "^3.1.14",
-    "prettier": "^3.8.1",
-    "supertest": "^7.2.2",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0",
-    "vitest": "^3.2.4"
+    "typescript": "^5.9.3"
   }
 }

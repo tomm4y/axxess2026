@@ -1,29 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "lib": ["ES2020"],
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
-    "baseUrl": "./",
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "@src/*": ["src/*"]
-    },
-    "useUnknownInCatchVariables": false,
-    "types": ["vitest/globals"]
+    "skipLibCheck": true
   },
-  "ts-node": {
-    "swc": true,
-    "require": ["tsconfig-paths/register", "dotenv/config"],
-  },
-  "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts",
-    "scripts",
-    "eslint.config.ts",
-    "vitest.config.mts"
-  ],
-  "exclude": ["src/public/*"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
