@@ -1,11 +1,16 @@
 import { Pool } from "pg";
 import "dotenv/config";
-import { UserId, RoomId } from "./types";
+import { UserId, RoomId, SessionId } from "./types";
 
 const password = process.env.SUPABASE_DB_PASSWORD;
 const connectionString = `postgresql://postgres.ajdzgecxzrryyiwznqku:${password}@aws-1-us-east-1.pooler.supabase.com:6543/postgres`;
 
 export const pool = new Pool({ connectionString });
+
+export async function getUserData(user: UserId): Promise<object | null> {
+  const result = await pool.query("select * from users where id = $1", [user.toString()]);
+  return result.rows[0] ?? null;
+}
 
 export async function getUserByUuid(uuid: string): Promise<UserId | null> {
   const result = await pool.query("select id from users where id = $1", [uuid]);
@@ -34,4 +39,59 @@ export async function getOrCreateRoom(clinician: UserId, patient: UserId): Promi
     [clinicianStr, patientStr]
   );
   return RoomId.create(created.rows[0].id);
+}
+
+export async function endSession(sessionId: SessionId): Promise<void> {
+  await pool.query("update sessions set active = false where id = $1", [sessionId.toString()]);
+}
+
+export async function getSessions(roomId: RoomId): Promise<SessionId[]> {
+  const result = await pool.query("select id from sessions where room = $1", [roomId.toString()]);
+  return result.rows.map(row => SessionId.create(row.id));
+}
+
+export async function getActiveSession(roomId: RoomId): Promise<SessionId | null> {
+  const result = await pool.query(
+    "select id from sessions where room = $1 and active = true",
+    [roomId.toString()]
+  );
+  if (!result.rows[0]) return null;
+  return SessionId.create(result.rows[0].id);
+}
+
+export async function endActiveSession(roomId: RoomId): Promise<void> {
+  await pool.query(
+    "update sessions set active = false where room = $1 and active = true",
+    [roomId.toString()]
+  );
+}
+
+export async function newSession(roomId: RoomId): Promise<SessionId> {
+  await endActiveSession(roomId);
+  const result = await pool.query(
+    "insert into sessions (room, active) values ($1, true) returning id",
+    [roomId.toString()]
+  );
+  return SessionId.create(result.rows[0].id);
+}
+
+export async function getAllSessionsDebug(activeOnly?: boolean): Promise<object[]> {
+  if (activeOnly) {
+    const result = await pool.query("select * from sessions where active = true");
+    return result.rows;
+  }
+  const result = await pool.query("select * from sessions");
+  return result.rows;
+}
+
+export async function getSessionsByRoom(roomId: RoomId, activeOnly?: boolean): Promise<SessionId[]> {
+  if (activeOnly) {
+    const result = await pool.query(
+      "select id from sessions where room = $1 and active = true",
+      [roomId.toString()]
+    );
+    return result.rows.map(row => SessionId.create(row.id));
+  }
+  const result = await pool.query("select id from sessions where room = $1", [roomId.toString()]);
+  return result.rows.map(row => SessionId.create(row.id));
 }
