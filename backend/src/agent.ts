@@ -1,5 +1,6 @@
 // diagnosticAgent.ts
 import { callLLM, extractJSON } from "./openai";
+import { searchIcdCodes, type IcdMatch } from "./icdSearch";
 
 export async function diagnosticAgent(conversation: string) {
   // Step 1: Extract structured medical info (now includes vitals)
@@ -61,27 +62,7 @@ If a vital is not mentioned, leave it as empty string.`,
     };
   }
 
-  // Step 2: Suggest ICD-10 code
-  const icdPrompt = [
-    {
-      role: "system" as const,
-      content: `Based on the structured patient data, suggest the most fitting ICD-10 code.
-Return ONLY valid JSON, no extra text, no markdown:
-{
-  "icd_code": "",
-  "description": "",
-  "confidence": "high | medium | low",
-  "confidence_reason": ""
-}`,
-    },
-    {
-      role: "user" as const,
-      content: JSON.stringify(extraction),
-    },
-  ];
-
-  const icdRaw = await callLLM(icdPrompt, 0.1);
-
+  // Step 2: ICD-10 code via vector similarity search (not LLM guessing)
   let icd: {
     icd_code: string;
     description: string;
@@ -90,10 +71,49 @@ Return ONLY valid JSON, no extra text, no markdown:
   };
 
   try {
-    icd = JSON.parse(extractJSON(icdRaw));
+    // Build a terse symptom summary for embedding
+    const symptomText = [
+      extraction.symptoms.length > 0 ? extraction.symptoms.join(", ") : "",
+      extraction.severity ? `Severity: ${extraction.severity}` : "",
+      extraction.duration ? `Duration: ${extraction.duration}` : "",
+      extraction.additional_notes || "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    const matches: IcdMatch[] = await searchIcdCodes(symptomText, 3);
+
+    if (matches.length > 0) {
+      const best = matches[0];
+      const confidence =
+        best.similarity >= 0.75
+          ? "high"
+          : best.similarity >= 0.55
+          ? "medium"
+          : "low";
+
+      icd = {
+        icd_code: best.code,
+        description: best.description,
+        confidence,
+        confidence_reason: `Semantic similarity: ${(best.similarity * 100).toFixed(1)}%. Top ${matches.length} matches: ${matches.map((m) => `${m.code} (${(m.similarity * 100).toFixed(0)}%)`).join(", ")}`,
+      };
+    } else {
+      icd = {
+        icd_code: "",
+        description: "No matching ICD code found",
+        confidence: "low",
+        confidence_reason: "No codes exceeded the similarity threshold",
+      };
+    }
   } catch (err) {
-    console.error("ICD JSON parse error:", icdRaw);
-    icd = { icd_code: "", description: "", confidence: "", confidence_reason: "" };
+    console.error("ICD vector search error:", err);
+    icd = {
+      icd_code: "",
+      description: "",
+      confidence: "",
+      confidence_reason: "Vector search failed, see logs",
+    };
   }
 
   // Step 3: Short patient-friendly summary
