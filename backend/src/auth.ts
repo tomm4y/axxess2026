@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getSupabaseAdmin } from './supabase'
-import { pool, createUser, getUserData } from './db'
+import { pool, createUser, getUserData, getUserByUuid } from './db'
 import { UserId } from './types'
 
 const router = Router()
@@ -71,7 +71,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Get user data from users table
-    const userData = getUserData(UserId.create(data.user.id))
+    const userData = await getUserByUuid(data.user.id).then((e) => e ? getUserData(e) : null)
 
     res.json({
       message: 'Login successful',
