@@ -2,14 +2,12 @@ import { LucideQrCode, LucideUser, LucideX } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentUser } from './lib/api';
+import QRCode from 'qrcode';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-// TODO [BACKEND]: Define the Doctor/Patient type based on your database schema
 interface Person {
   id: string;
   name: string;
-  specialty?: string;  // For doctors
+  specialty?: string;
   imageUrl?: string;
 }
 
@@ -20,51 +18,18 @@ interface UserData {
   is_clinician: boolean;
 }
 
-// ─── QR Code Generation Placeholder ───────────────────────────────────────────
-
-/**
- * TODO [BACKEND]: Generate QR code from doctor's UID
- * 
- * This function should:
- * 1. Take the doctor's UID (from Supabase auth)
- * 2. Generate a QR code image/data URL
- * 3. Return the QR code as a base64 string or data URL
- * 
- * Suggested libraries:
- * - npm install qrcode
- * - npm install react-qr-code
- * 
- * Example implementation with 'qrcode' library:
- * ```
- * import QRCode from 'qrcode';
- * 
- * const generateQRCode = async (doctorUid: string): Promise<string> => {
- *   try {
- *     // You can encode just the UID or a full URL/JSON object
- *     const qrData = JSON.stringify({ doctorId: doctorUid, type: 'doctor-link' });
- *     const qrCodeDataUrl = await QRCode.toDataURL(qrData, {
- *       width: 256,
- *       margin: 2,
- *       color: { dark: '#E73A5B', light: '#FFFFFF' }
- *     });
- *     return qrCodeDataUrl;
- *   } catch (error) {
- *     console.error('Failed to generate QR code:', error);
- *     throw error;
- *   }
- * };
- * ```
- * 
- * @param doctorUid - The doctor's UID from Supabase auth (users.id)
- * @returns Promise<string> - Base64 data URL of the QR code image
- */
-const generateQRCodeFromUid = async (_doctorUid: string): Promise<string> => {
-  // TODO [BACKEND]: Implement QR code generation
-  // For now, return a placeholder
-  console.log('QR Code generation not yet implemented. Doctor UID:', _doctorUid);
-  
-  // Return empty string - replace with actual QR code data URL
-  return '';
+const generateQRCodeFromUid = async (doctorUid: string): Promise<string> => {
+  try {
+    const qrCodeDataUrl = await QRCode.toDataURL(doctorUid, {
+      width: 256,
+      margin: 2,
+      color: { dark: '#E73A5B', light: '#FFFFFF' }
+    });
+    return qrCodeDataUrl;
+  } catch (error) {
+    console.error('Failed to generate QR code:', error);
+    throw error;
+  }
 };
 
 // ─── Dashboard Component ──────────────────────────────────────────────────────
@@ -76,9 +41,6 @@ const Dashboard: React.FC = () => {
   const [user, setUser] = useState<UserData | null>(null);
   const [isClinician, setIsClinician] = useState(false);
   
-  // TODO [BACKEND]: Use setPersons when fetching from API
-  // For clinicians: this is patients list
-  // For patients: this is doctors list
   const [persons, _setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -89,29 +51,12 @@ const Dashboard: React.FC = () => {
   const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
-    // Fetch user info to check if clinician
     const fetchUserAndData = async () => {
       try {
-        // TODO [BACKEND]: This calls GET /auth/me to get user info
         const response = await getCurrentUser();
         if (response?.user) {
           setUser(response.user);
           setIsClinician(response.user.is_clinician);
-          
-          // TODO [BACKEND]: Based on user type, fetch appropriate list
-          // If clinician: fetch patients linked to this doctor
-          // If patient: fetch doctors linked to this patient
-          // 
-          // Example:
-          // const token = localStorage.getItem('access_token');
-          // const endpoint = response.user.is_clinician 
-          //   ? 'http://localhost:3000/api/clinician/patients'
-          //   : 'http://localhost:3000/api/patient/doctors';
-          // const listResponse = await fetch(endpoint, {
-          //   headers: { 'Authorization': `Bearer ${token}` }
-          // });
-          // const data = await listResponse.json();
-          // setPersons(data.persons || data.doctors || data.patients);
         }
       } catch (error) {
         console.error('Failed to fetch user:', error);
@@ -123,35 +68,12 @@ const Dashboard: React.FC = () => {
     fetchUserAndData();
   }, []);
 
-  // Patient action: Scan doctor's QR code
   const handleScanQRCode = () => {
-    // TODO [BACKEND]: Implement QR code scanning functionality
-    // This should:
-    // 1. Open camera/QR scanner
-    // 2. Scan doctor's QR code (containing doctor ID or room invite)
-    // 3. Call backend API to link patient with doctor
-    // Example:
-    // const linkDoctor = async (doctorId: string) => {
-    //   const token = localStorage.getItem('access_token');
-    //   const response = await fetch('http://localhost:3000/api/patient/link-doctor', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //       'Authorization': `Bearer ${token}`
-    //     },
-    //     body: JSON.stringify({ doctorId })
-    //   });
-    //   if (response.ok) {
-    //     // Refresh list
-    //   }
-    // };
-
     setScanning(true);
-    alert('QR Scanner will be integrated here. Backend developer: implement camera access and QR parsing.');
+    alert('QR Scanner will be integrated here.');
     setScanning(false);
   };
 
-  // Clinician action: Show QR code to patient
   const handleShowQRCode = async () => {
     if (!user?.id) {
       alert('User not loaded');
@@ -162,7 +84,6 @@ const Dashboard: React.FC = () => {
     setQrLoading(true);
     
     try {
-      // TODO [BACKEND]: Generate QR code from doctor's UID
       const qrCode = await generateQRCodeFromUid(user.id);
       setQrCodeData(qrCode);
     } catch (error) {
@@ -172,16 +93,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // TODO [BACKEND]: Use person param when navigating to session
   const handlePersonClick = (_person: Person) => {
-    // TODO [BACKEND]: Navigate to session/transcript page
-    // For clinicians: navigate to session with this patient
-    // For patients: navigate to session with this doctor
-    // Example:
-    // navigate(`/session/${person.id}`);
-    // or
-    // navigate(`/transcript?${isClinician ? 'patientId' : 'doctorId'}=${person.id}`);
-    
     navigate('/transcript');
   };
 
@@ -245,8 +157,6 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
           ) : (
-            // Person cards
-            // TODO [BACKEND]: Map through actual persons from API response
             persons.map((person) => (
               <button
                 key={person.id}
@@ -340,21 +250,16 @@ const Dashboard: React.FC = () => {
                   <div className="w-8 h-8 border-3 border-[#E73A5B] border-t-transparent rounded-full animate-spin"></div>
                 </div>
               ) : qrCodeData ? (
-                // TODO [BACKEND]: Display actual QR code image
                 <img 
                   src={qrCodeData} 
                   alt="QR Code" 
                   className="w-64 h-64 rounded-xl"
                 />
               ) : (
-                // Placeholder when QR generation not implemented
                 <div className="w-64 h-64 bg-[#FBE4EE] rounded-xl flex flex-col items-center justify-center p-4">
                   <LucideQrCode className="text-[#E73A5B] mb-4" size={64} />
                   <p className="text-gray-600 text-sm text-center">
-                    QR Code will appear here once backend integration is complete
-                  </p>
-                  <p className="text-gray-400 text-xs text-center mt-2">
-                    Doctor ID: {user?.id?.slice(0, 8)}...
+                    Failed to generate QR code
                   </p>
                 </div>
               )}
@@ -382,19 +287,13 @@ const Dashboard: React.FC = () => {
            - Patient: GET /api/patient/doctors - Returns linked doctors
            - Response: { persons: Person[] } or similar
         
-        3. QR CODE GENERATION (for clinicians)
-           - Use 'qrcode' or 'react-qr-code' library
-           - npm install qrcode @types/qrcode
-           - Generate QR containing doctor's UID from Supabase (user.id)
-           - See generateQRCodeFromUid function above for implementation notes
-        
-        4. QR CODE SCANNING (for patients)
+        3. QR CODE SCANNING (for patients)
            - Use 'html5-qrcode' or '@yudiel/react-qr-scanner'
            - npm install html5-qrcode
            - Parse scanned data to get doctorId
            - Call POST /api/patient/link-doctor with doctorId
         
-        5. LINKING FLOW
+        4. LINKING FLOW
            - Patient scans clinician's QR → extracts doctorId
            - POST /api/patient/link-doctor { doctorId }
            - Creates relationship in database (e.g., doctor_patient_links table)
