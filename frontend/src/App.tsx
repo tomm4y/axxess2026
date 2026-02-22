@@ -1,41 +1,183 @@
-import { Link } from 'react-router'
-import './App.css'
+import { useState, useEffect, type CSSProperties, type MouseEvent } from "react";
+import { Link } from "react-router";
 
-function App() {
-  return (
-    <div>
-      <div className='fixed inset-0'>
-        <img src='/WaveBG.svg' className='top-0 fixed w-full'/>
-        <img src='/BottomWaveBG.svg' className='bottom-0 fixed w-full'/>
-      </div>
-      <div className='fixed w-full h-full flex flex-col items-center top-[10%]'>
-        <h1 className='font-sf-regular text-white text-3xl flex justify-center items-center'>
-          Welcome To
-        </h1>
-        <img className="w-[70%]" src='/Logo.svg'/>
-      </div>
-      <div className='fixed bottom-[15%] w-full flex flex-col items-center gap-4 px-8'>
-        <Link
-          to="/login"
-          className='w-full max-w-sm py-4 text-center rounded-full font-bold text-white text-lg'
-          style={{
-            background: 'linear-gradient(135deg, #ff4d7d, #e91e8c)',
-            boxShadow: '0 8px 24px rgba(233,30,140,0.35)',
-          }}
-        >
-          Login
-        </Link>
-        <Link
-          to="/signup"
-          className='w-full max-w-sm py-4 text-center rounded-full font-bold text-lg'
-          style={{
-            background: 'white',
-            color: '#e91e8c',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-          }}
-        >
-          Create Account
-        </Link>
+interface WaveDividerProps {
+  flip?: boolean;
+  color?: string;
+}
+
+const WaveDivider: React.FC<WaveDividerProps> = ({ flip = false, color = "white" }) => (
+  <svg
+    viewBox="0 0 400 60"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{
+      display: "block",
+      width: "calc(100% + 2px)",
+      marginLeft: -1,
+      transform: flip ? "scaleY(-1)" : "none",
+    }}
+    preserveAspectRatio="none"
+    height="60"
+  >
+    <path
+      d="M-10,20 C40,55 100,5 160,28 C220,51 270,5 330,28 C370,43 390,18 410,22 L410,60 L-10,60 Z"
+      fill={color}
+    />
+  </svg>
+);
+
+// Full-width wave for desktop hero
+const WideWave: React.FC<{ color?: string; flip?: boolean }> = ({ color = "white", flip = false }) => (
+  <svg
+    viewBox="0 0 1440 80"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{
+      display: "block",
+      width: "calc(100% + 4px)",
+      marginLeft: -2,
+      transform: flip ? "scaleY(-1)" : "none",
+    }}
+    preserveAspectRatio="none"
+    height="80"
+  >
+    <path
+      d="M-10,40 C120,80 240,0 400,40 C560,80 680,5 840,38 C1000,70 1120,10 1280,42 C1380,62 1420,30 1450,38 L1450,80 L-10,80 Z"
+      fill={color}
+    />
+  </svg>
+);
+
+const App: React.FC = () => {
+  const [visible, setVisible] = useState<boolean>(false);
+  const [isDesktop, setIsDesktop] = useState<boolean>(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 100);
+
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 768);
+    checkDesktop();
+    window.addEventListener("resize", checkDesktop);
+
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", checkDesktop);
+    };
+  }, []);
+
+  // ── Shared button handlers ──────────────────────────────────────────────────
+
+  const handleLoginMouseEnter = (e: MouseEvent<HTMLAnchorElement>): void => {
+    e.currentTarget.style.transform = "scale(1.02)";
+    e.currentTarget.style.boxShadow = "0 12px 32px rgba(233,30,140,0.45)";
+  };
+
+  const handleLoginMouseLeave = (e: MouseEvent<HTMLAnchorElement>): void => {
+    e.currentTarget.style.transform = "scale(1)";
+    e.currentTarget.style.boxShadow = "0 8px 24px rgba(233,30,140,0.35)";
+  };
+
+  const handleCreateMouseEnter = (e: MouseEvent<HTMLAnchorElement>): void => {
+    e.currentTarget.style.background = "#fff0f6";
+  };
+
+  const handleCreateMouseLeave = (e: MouseEvent<HTMLAnchorElement>): void => {
+    e.currentTarget.style.background = "white";
+  };
+
+  // ── Shared fade-in style helper ─────────────────────────────────────────────
+
+  const fadeIn = (delay: number): CSSProperties => ({
+    opacity: visible ? 1 : 0,
+    transform: visible ? "translateY(0)" : "translateY(20px)",
+    transition: `all 0.6s ease ${delay}s`,
+  });
+
+  // ── Mobile view ─────────────────────────────────────────────────────────────
+
+  const mobileView = (
+    <div style={{ minHeight: "100vh", background: "#f0f0f0", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", width: "100%" }}>
+
+        {/* Hero */}
+        <div style={{
+          background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
+          paddingTop: 70, paddingBottom: 0, paddingLeft: 30, paddingRight: 30,
+          position: "relative", minHeight: 320, overflow: "visible",
+        }}>
+          <div style={{ height: 30 }} />
+          <div style={{
+            color: "white", fontSize: 36,
+            fontFamily: "SF-Pro-Display-Regular, 'Nunito', sans-serif",
+            fontWeight: 800, lineHeight: 1.15, margin: "20px 0 0",
+            letterSpacing: -0.5, ...fadeIn(0),
+          }}>
+            Welcome To
+            <div>
+              <img src="/Logo.svg" alt="HealthSafe" />
+            </div>
+          </div>
+          <div style={{
+            color: "rgba(255,255,255,0.85)", fontSize: 17,
+            fontFamily: "SF-Pro-Display-Regular, 'Nunito', sans-serif",
+            marginTop: 12, marginBottom: 30, ...fadeIn(0.15),
+          }}>
+            Manage your health, smarter.
+          </div>
+          <div style={{ marginBottom: -2, marginLeft: -30, marginRight: -30 }}>
+            <WaveDivider color="white" />
+          </div>
+        </div>
+
+        <div className="bg-white text-center flex flex-col px-10 items-center justify-center">
+          <h1 className="text-md font-sf-semibold text-gray-500">
+            Manage your health smarter — with records, appointments, prescriptions, and care all in one place.
+          </h1>
+        </div>
+
+        {/* Buttons */}
+        <div style={{ flex: 1, background: "white", padding: "40px 32px 32px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <Link
+            to="/login"
+            onMouseEnter={handleLoginMouseEnter}
+            onMouseLeave={handleLoginMouseLeave}
+            style={{
+              display: "block", width: "100%", textAlign: "center",
+              padding: "16px 0", borderRadius: 50, fontSize: 17, fontWeight: 700,
+              color: "white", textDecoration: "none",
+              background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+              boxShadow: "0 8px 24px rgba(233,30,140,0.35)",
+              fontFamily: "'Nunito', sans-serif",
+              transition: "box-shadow 0.2s, transform 0.2s",
+              ...fadeIn(0.3),
+            }}
+          >
+            Login
+          </Link>
+          <Link
+            to="/signup"
+            onMouseEnter={handleCreateMouseEnter}
+            onMouseLeave={handleCreateMouseLeave}
+            style={{
+              display: "block", width: "100%", textAlign: "center",
+              padding: "15px 0", borderRadius: 50, fontSize: 17, fontWeight: 700,
+              color: "#e91e8c", textDecoration: "none",
+              background: "white", border: "2px solid #e91e8c",
+              fontFamily: "'Nunito', sans-serif",
+              transition: "background 0.2s",
+              ...fadeIn(0.42),
+            }}
+          >
+            Create Account
+          </Link>
+        </div>
+
+        {/* Footer wave */}
+        <div style={{ position: "relative", height: 60, background: "linear-gradient(160deg, #ff4d7d 0%, #e91e8c 100%)", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+            <WaveDivider color="white" flip={true} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -130,14 +272,11 @@ function App() {
             </p>
           </div>
 
-          <div className="font-sf-semibold" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+          <div className="font-sf-semibold" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 18 }}>
             {[
               { title: "Smart Records", desc: "All your medical history in one secure place.", emoji: "📋" },
               { title: "Doctor Connect", desc: "Book appointments and message your care team.", emoji: "👨‍⚕️" },
-              { title: "Real-Time Monitoring", desc: "Track vitals and health goals with ease.", emoji: "📈" },
               { title: "Secure & Private", desc: "Bank-grade encryption keeps your data safe.", emoji: "🔒" },
-              { title: "Real-Time Transcription", desc: "Never misremember a session with your client or clinician.", emoji: "📄" },
-              { title: "24/7 Support", desc: "Health advisors always on-call.", emoji: "💬" },
             ].map(({ title, desc, emoji }, i) => {
               const [hovered, setHovered] = useState(false);
               return (
@@ -171,10 +310,6 @@ function App() {
       <footer style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
           <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
-
-          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontWeight: 600, margin: 0 }}>
-            © 2026 HealthSafe. All rights reserved.
-          </p>
         </div>
       </footer>
     </div>

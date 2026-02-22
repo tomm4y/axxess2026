@@ -7,4 +7,19 @@ export default defineConfig({
   plugins: [react(),
             tailwindcss()
   ],
+  server: {
+    allowedHosts: ['.trycloudflare.com'],
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000/", // your backend port
+        changeOrigin: true,
+        secure: false,
+      },
+      "/auth": {
+        target: "http://localhost:3000/", // your backend port
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 })

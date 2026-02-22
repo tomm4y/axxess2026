@@ -2,7 +2,6 @@ import { LucideQrCode, LucideUser, LucideX } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentUser } from './lib/api';
-import { eventSocket } from './lib/eventSocket';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,14 +89,29 @@ const Dashboard: React.FC = () => {
   const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
+    // Fetch user info to check if clinician
     const fetchUserAndData = async () => {
       try {
+        // TODO [BACKEND]: This calls GET /auth/me to get user info
         const response = await getCurrentUser();
         if (response?.user) {
           setUser(response.user);
           setIsClinician(response.user.is_clinician);
-
-          eventSocket.open(response.user.id).catch(console.error);
+          
+          // TODO [BACKEND]: Based on user type, fetch appropriate list
+          // If clinician: fetch patients linked to this doctor
+          // If patient: fetch doctors linked to this patient
+          // 
+          // Example:
+          // const token = localStorage.getItem('access_token');
+          // const endpoint = response.user.is_clinician 
+          //   ? 'http://localhost:3000/api/clinician/patients'
+          //   : 'http://localhost:3000/api/patient/doctors';
+          // const listResponse = await fetch(endpoint, {
+          //   headers: { 'Authorization': `Bearer ${token}` }
+          // });
+          // const data = await listResponse.json();
+          // setPersons(data.persons || data.doctors || data.patients);
         }
       } catch (error) {
         console.error('Failed to fetch user:', error);
@@ -107,28 +121,6 @@ const Dashboard: React.FC = () => {
     };
     
     fetchUserAndData();
-
-    // WIP: Log event received handler - placeholder for future event handling logic
-    const unsubInvite = eventSocket.registerOnInvite((event) => {
-      console.log('[WIP] Session invite received:', event);
-    });
-    const unsubRoom = eventSocket.registerOnRoomCreated((event) => {
-      console.log('[WIP] Room created:', event);
-    });
-    const unsubSession = eventSocket.registerOnSessionStarted((event) => {
-      console.log('[WIP] Session started:', event);
-    });
-    const unsubError = eventSocket.registerOnError((event) => {
-      console.log('[WIP] Error received:', event);
-    });
-
-    return () => {
-      unsubInvite();
-      unsubRoom();
-      unsubSession();
-      unsubError();
-      eventSocket.close();
-    };
   }, []);
 
   // Patient action: Scan doctor's QR code

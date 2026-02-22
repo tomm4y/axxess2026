@@ -241,16 +241,12 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ selected, onChange, visible
   ];
 
   return (
-    <>
-    <div className="h-[1px] w-full bg-linear-gradient(135deg, #fff0f6, #ffe0f0)">
-
-    </div>
-    <div className="mt-5" 
-    style={{
+    <div style={{
       opacity: visible ? 1 : 0,
       transform: visible ? "translateY(0)" : "translateY(18px)",
       transition: `opacity 0.55s ease ${delay}s, transform 0.55s ease ${delay}s`,
     }}>
+      <div style={{ height: 1, background: "#f0d0e8", marginBottom: 20 }} />
       <label style={labelStyle}>I am a</label>
       <div style={{ display: "flex", gap: 10 }}>
         {roles.map(({ key, label, desc, icon }) => {
@@ -306,7 +302,6 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ selected, onChange, visible
         <p style={{ margin: "6px 0 0 4px", fontSize: 12, color: "#ff4d7d", fontWeight: 600 }}>{error}</p>
       )}
     </div>
-    </>
   );
 };
 
@@ -326,10 +321,98 @@ const EmailIcon = () => (
   </svg>
 );
 
-// ─── Main Sign Up Screen ──────────────────────────────────────────────────────
+// ─── Shared Form ──────────────────────────────────────────────────────────────
+
+interface SignUpFormProps {
+  fullName: string; setFullName: (v: string) => void;
+  email: string; setEmail: (v: string) => void;
+  password: string; setPassword: (v: string) => void;
+  confirmPassword: string; setConfirmPassword: (v: string) => void;
+  role: Role; setRole: (r: Role) => void;
+  visible: boolean; loading: boolean;
+  errors: Record<string, string>;
+  apiError: string;
+  handleSignUp: (e: MouseEvent<HTMLButtonElement>) => void;
+}
+
+const SignUpForm: React.FC<SignUpFormProps> = ({
+  fullName, setFullName, email, setEmail,
+  password, setPassword, confirmPassword, setConfirmPassword,
+  role, setRole, visible, loading, errors, apiError, handleSignUp,
+}) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <Field
+      label="Full Name" placeholder="Enter your full name"
+      value={fullName} onChange={(e) => setFullName(e.target.value)}
+      icon={<UserIcon />} visible={visible} delay={0.2}
+      error={errors.fullName}
+    />
+    <Field
+      label="Email Address" type="email" placeholder="Enter your email"
+      value={email} onChange={(e) => setEmail(e.target.value)}
+      icon={<EmailIcon />} visible={visible} delay={0.28}
+      error={errors.email}
+    />
+    <PasswordField
+      value={password} onChange={(e) => setPassword(e.target.value)}
+      visible={visible} delay={0.44} strengthBar
+    />
+    <PasswordField
+      label="Confirm Password" placeholder="Re-enter your password"
+      value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+      visible={visible} delay={0.52}
+      error={errors.confirmPassword}
+    />
+    <RoleSelector
+      selected={role} onChange={setRole}
+      visible={visible} delay={0.6}
+      error={errors.role}
+    />
+
+    {apiError && (
+      <div style={{
+        background: "#fff5f8", border: "2px solid #ff4d7d",
+        borderRadius: 14, padding: "12px 16px", color: "#ff4d7d", fontSize: 14, fontWeight: 600,
+      }}>
+        {apiError}
+      </div>
+    )}
+
+    <button
+      onClick={handleSignUp}
+      disabled={loading}
+      onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.boxShadow = "0 12px 32px rgba(233,30,140,0.45)"; }}
+      onMouseLeave={(e: MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.boxShadow = "0 8px 24px rgba(233,30,140,0.35)"; }}
+      style={{
+        background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+        color: "white", border: "none", borderRadius: 50,
+        padding: "16px 0", fontSize: 17, fontWeight: 700,
+        cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3,
+        boxShadow: "0 8px 24px rgba(233,30,140,0.35)",
+        fontFamily: "'Nunito', 'Poppins', sans-serif", marginTop: 4,
+        opacity: visible ? (loading ? 0.7 : 1) : 0,
+        transform: visible ? "translateY(0)" : "translateY(18px)",
+        transition: "opacity 0.55s ease 0.68s, transform 0.55s ease 0.68s, box-shadow 0.2s",
+      }}
+    >
+      {loading ? "Creating account..." : "Create Account"}
+    </button>
+
+    <div style={{ textAlign: "center", paddingTop: 2, opacity: visible ? 1 : 0, transition: "all 0.55s ease 0.74s" }}>
+      <span style={{ color: "#9a7a99", fontSize: 14, fontWeight: 600 }}>Already have an account? </span>
+      <Link to="/login" style={{
+        color: "#e91e8c", fontSize: 14, fontWeight: 800,
+        textDecoration: "none", fontFamily: "'Nunito', 'Poppins', sans-serif",
+      }}>Log In</Link>
+    </div>
+  </div>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 const HealthSafeSignUp: React.FC = () => {
   const [visible, setVisible] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>(null);
@@ -342,32 +425,27 @@ const HealthSafeSignUp: React.FC = () => {
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
-    return () => clearTimeout(t);
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 768);
+    checkDesktop();
+    window.addEventListener("resize", checkDesktop);
+    return () => { clearTimeout(t); window.removeEventListener("resize", checkDesktop); };
   }, []);
 
   const errors = submitted
     ? {
         fullName: !fullName ? "Full name is required" : "",
         email: !email ? "Email is required" : !/\S+@\S+\.\S+/.test(email) ? "Invalid email" : "",
-        confirmPassword:
-          confirmPassword && confirmPassword !== password ? "Passwords don't match" : "",
+        confirmPassword: confirmPassword && confirmPassword !== password ? "Passwords don't match" : "",
         role: !role ? "Please select a role" : "",
       }
-    : { fullName: "", email: "", confirmPassword: "", role: "", agreed: "" };
+    : { fullName: "", email: "", confirmPassword: "", role: "" };
 
   const handleSignUp = async (e: MouseEvent<HTMLButtonElement>) => {
     setSubmitted(true);
     setApiError("");
     e.currentTarget.style.transform = "scale(0.98)";
-    setTimeout(() => {
-      if (e.currentTarget) e.currentTarget.style.transform = "scale(1)";
-    }, 150);
-
-    // Check for validation errors
-    if (!fullName || !email || !role || !/\S+@\S+\.\S+/.test(email) || (confirmPassword && confirmPassword !== password)) {
-      return;
-    }
-
+    setTimeout(() => { if (e.currentTarget) e.currentTarget.style.transform = "scale(1)"; }, 150);
+    if (!fullName || !email || !role || !/\S+@\S+\.\S+/.test(email) || (confirmPassword && confirmPassword !== password)) return;
     setLoading(true);
     try {
       await signup(email, password, fullName, role === "doctor");
@@ -379,178 +457,174 @@ const HealthSafeSignUp: React.FC = () => {
     }
   };
 
+  const formProps = {
+    fullName, setFullName, email, setEmail,
+    password, setPassword, confirmPassword, setConfirmPassword,
+    role, setRole, visible, loading, errors, apiError, handleSignUp,
+  };
+
+  // ── Mobile ──────────────────────────────────────────────────────────────────
+
+  if (!isDesktop) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#f0f0f0", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", width: "100%" }}>
+
+          {/* Hero */}
+          <div style={{
+            background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
+            paddingTop: 60, paddingBottom: 0, paddingLeft: 30, paddingRight: 30,
+            position: "relative", overflow: "visible",
+          }}>
+            <div style={{ height: 24 }} />
+            <Link to="/" className="absolute top-8 left-5">
+              <LucideArrowLeft color="white" size={35} />
+            </Link>
+            <div style={{ display: "flex", alignItems: "center", fontSize: 22, fontWeight: 800, color: "white" }}>
+              <img src="/Logo.svg" alt="HealthSafe" />
+            </div>
+            <div style={{
+              marginTop: 18, marginBottom: 24,
+              opacity: visible ? 1 : 0,
+              transform: visible ? "translateY(0)" : "translateY(16px)",
+              transition: "all 0.6s ease 0.1s",
+            }}>
+              <div className="font-sf-semibold text-2xl text-white">Create Your Account</div>
+            </div>
+            <div style={{ marginBottom: -2, marginLeft: -30, marginRight: -30 }}>
+              <WaveDivider color="white" />
+            </div>
+          </div>
+
+          {/* Form */}
+          <div style={{ flex: 1, background: "white", padding: "28px 28px 24px", overflowY: "auto" }}>
+            <SignUpForm {...formProps} />
+          </div>
+
+          {/* Footer wave */}
+          <div style={{ position: "relative", height: 60, background: "linear-gradient(160deg, #ff4d7d 0%, #e91e8c 100%)", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+              <WaveDivider color="white" flip={true} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop ─────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{
-      minHeight: "100vh", background: "#f0f0f0",
-      display: "flex", justifyContent: "center", alignItems: "flex-start",
-    }}>
+    <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
 
-      <div style={{
-      }}>
+      {/* Main split layout */}
+      <div style={{ flex: 1, display: "flex", minHeight: "calc(100vh - 68px)" }}>
 
-        {/* Hero */}
+        {/* Left — gradient panel */}
         <div style={{
-          background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
-          paddingTop: 60, paddingBottom: 0, paddingLeft: 30, paddingRight: 30,
-          position: "relative", overflow: "visible",
+          width: "45%", flexShrink: 0,
+          background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 45%, #e91e8c 100%)",
+          display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
+          padding: "60px 64px", position: "relative", overflow: "hidden",
         }}>
-          <div style={{ height: 24 }} />
-            <Link to="/" className="absolute top-8 left-5">
-              <LucideArrowLeft color="white" size={35}/>
-            </Link>
-          {/* Top row */}
+          {/* Decorative blobs */}
+          <div style={{ position: "absolute", top: -80, left: -80, width: 320, height: 320, borderRadius: "50%", background: "rgba(255,255,255,0.08)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: -60, right: -60, width: 260, height: 260, borderRadius: "50%", background: "rgba(255,255,255,0.06)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", top: "50%", right: -40, width: 140, height: 140, borderRadius: "50%", background: "rgba(255,255,255,0.05)", pointerEvents: "none" }} />
+
           <div style={{
-            display: "flex", alignItems: "center", gap: 10,
+            maxWidth: 400, width: "100%",
             opacity: visible ? 1 : 0,
-            transform: visible ? "translateY(0)" : "translateY(16px)",
-            transition: "all 0.5s ease",
+            transform: visible ? "translateY(0)" : "translateY(24px)",
+            transition: "all 0.7s ease",
           }}>
+            <img src="/Logo.svg" alt="HealthSafe" style={{ height: 54, marginBottom: 32 }} />
 
-            <div style={{ display: "flex", alignItems: "center", fontSize: 22, fontWeight: 800, color: "white" }}>
-                <img src="/Logo.svg"/>
-            </div>
-          </div>
+            <h1 style={{
+              fontSize: "clamp(28px, 3vw, 46px)", fontWeight: 900, color: "white",
+              margin: "0 0 16px", lineHeight: 1.1, letterSpacing: -1.5,
+            }}>
+              Join HealthSafe<br />today!
+            </h1>
+            <p style={{
+              fontSize: 16, color: "rgba(255,255,255,0.85)", fontWeight: 600,
+              margin: "0 0 36px", lineHeight: 1.65, maxWidth: 340,
+            }}>
+              Create your account to manage health records, connect with doctors, and take control of your wellness.
+            </p>
 
-          {/* Heading */}
-          <div style={{
-            marginTop: 18, marginBottom: 24,
-            opacity: visible ? 1 : 0,
-            transform: visible ? "translateY(0)" : "translateY(16px)",
-            transition: "all 0.6s ease 0.1s",
-          }}>
-            <div className="font-sf-semibold text-2xl text-white">
-              Create Your Account
+            {/* Steps */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {[
+                { step: "1", title: "Create your profile", desc: "Fill in your details and choose your role" },
+                { step: "2", title: "Verify your account", desc: "We'll send a quick confirmation to your email" },
+                { step: "3", title: "Start your journey", desc: "Access your dashboard and all features instantly" },
+              ].map(({ step, title, desc }) => (
+                <div key={step} style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                    background: "rgba(255,255,255,0.2)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 14, fontWeight: 900, color: "white",
+                  }}>{step}</div>
+                  <div>
+                    <div style={{ color: "white", fontSize: 14, fontWeight: 800, marginBottom: 2 }}>{title}</div>
+                    <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 600 }}>{desc}</div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="font-sf-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
-              
-            </div>
-          </div>
 
-          <div style={{ marginBottom: -2, marginLeft: -30, marginRight: -30 }}>
-            <WaveDivider color="white" />
+            <div className="mt-10" style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "SF-Pro-Display-Semibold" }}>
+              <img src="/LoginPageGraphic.svg"/>
+            </div>
+
           </div>
         </div>
 
-        {/* Form */}
+        {/* Right — form panel */}
         <div style={{
-          flex: 1, background: "white",
-          padding: "28px 28px 24px",
-          display: "flex", flexDirection: "column", gap: 14,
+          flex: 1, background: "#fdf6fa",
+          display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "center",
+          padding: "48px 48px 48px",
           overflowY: "auto",
         }}>
-
-          <Field
-            label="Full Name" placeholder="Enter your full name"
-            value={fullName} onChange={(e) => setFullName(e.target.value)}
-            icon={<UserIcon />} visible={visible} delay={0.2}
-            error={errors.fullName}
-          />
-
-          <Field
-            label="Email Address" type="email" placeholder="Enter your email"
-            value={email} onChange={(e) => setEmail(e.target.value)}
-            icon={<EmailIcon />} visible={visible} delay={0.28}
-            error={errors.email}
-          />
-
-          <PasswordField
-            value={password} onChange={(e) => setPassword(e.target.value)}
-            visible={visible} delay={0.44} strengthBar
-          />
-
-          <PasswordField
-            label="Confirm Password" placeholder="Re-enter your password"
-            value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-            visible={visible} delay={0.52}
-            error={errors.confirmPassword}
-          />
-
-          <RoleSelector
-            selected={role} onChange={setRole}
-            visible={visible} delay={0.6}
-            error={errors.role}
-          />
-          {submitted && errors.agreed && (
-            <p style={{ margin: "-8px 0 0 30px", fontSize: 12, color: "#ff4d7d", fontWeight: 600 }}>
-              {errors.agreed}
-            </p>
-          )}
-
-          {/* API Error message */}
-          {apiError && (
-            <div
-              style={{
-                background: "#fff5f8",
-                border: "2px solid #ff4d7d",
-                borderRadius: 14,
-                padding: "12px 16px",
-                color: "#ff4d7d",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              {apiError}
-            </div>
-          )}
-
-          {/* Create Account button */}
-          <button
-            onClick={handleSignUp}
-            disabled={loading}
-            onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => {
-              e.currentTarget.style.boxShadow = "0 12px 32px rgba(233,30,140,0.45)";
-            }}
-            onMouseLeave={(e: MouseEvent<HTMLButtonElement>) => {
-              e.currentTarget.style.boxShadow = "0 8px 24px rgba(233,30,140,0.35)";
-            }}
-            style={{
-              background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
-              color: "white", border: "none", borderRadius: 50,
-              padding: "16px 0", fontSize: 17, fontWeight: 700,
-              cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3,
-              boxShadow: "0 8px 24px rgba(233,30,140,0.35)",
-              fontFamily: "'Nunito', 'Poppins', sans-serif",
-              marginTop: 4,
-              opacity: visible ? (loading ? 0.7 : 1) : 0,
-              transform: visible ? "translateY(0)" : "translateY(18px)",
-              transition: "opacity 0.55s ease 0.68s, transform 0.55s ease 0.68s, box-shadow 0.2s",
-            }}
-          >
-            {loading ? "Creating account..." : "Create Account"}
-          </button>
-
-          {/* Login link */}
           <div style={{
-            textAlign: "center", paddingTop: 2,
+            width: "100%", maxWidth: 480,
             opacity: visible ? 1 : 0,
-            transition: "all 0.55s ease 0.74s",
+            transform: visible ? "translateY(0)" : "translateY(20px)",
+            transition: "all 0.6s ease 0.15s",
           }}>
-            <span style={{ color: "#9a7a99", fontSize: 14, fontWeight: 600 }}>
-              Already have an account?{" "}
-            </span>
-            <Link
-              to="/login"
-              style={{
-                background: "none", border: "none", color: "#e91e8c",
-                fontSize: 14, fontWeight: 800, cursor: "pointer",
-                fontFamily: "'Nunito', 'Poppins', sans-serif",
-                textDecoration: "none",
-              }}
+            {/* Back link */}
+            <Link to="/" style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              color: "#cca0bb", fontSize: 14, fontWeight: 700, textDecoration: "none",
+              marginBottom: 28, transition: "color 0.2s",
+            }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#e91e8c")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#cca0bb")}
             >
-              Log In
+              <LucideArrowLeft size={16} />
+              Back to home
             </Link>
-          </div>
-        </div>
 
-        {/* Footer wave */}
-        <div style={{
-          position: "relative", height: 60,
-          background: "linear-gradient(160deg, #ff4d7d 0%, #e91e8c 100%)",
-          overflow: "hidden",
-        }}>
-          <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-            <WaveDivider color="white" flip={true} />
+            <h2 style={{ fontSize: 28, fontWeight: 900, color: "#2d1a2e", margin: "0 0 4px", letterSpacing: -1 }}>
+              Create your account
+            </h2>
+            <p style={{ fontSize: 14, color: "#9a7a99", fontWeight: 600, margin: "0 0 28px" }}>
+              Fill in the details below to get started
+            </p>
+
+            {/* White card */}
+            <div style={{
+              background: "white", borderRadius: 24, padding: "28px 28px",
+              boxShadow: "0 8px 40px rgba(233,30,140,0.08), 0 2px 8px rgba(233,30,140,0.04)",
+              border: "1px solid #f5e0ef",
+            }}>
+              <SignUpForm {...formProps} />
+            </div>
           </div>
         </div>
       </div>
