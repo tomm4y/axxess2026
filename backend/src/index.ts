@@ -297,29 +297,24 @@ app.get("/api/session/:sessionId/transcript", async (req, res) => {
       return;
     }
     
-    // If no active session runtime, try to get from archived storage
-    console.log(`[Transcript API] No active runtime for session ${sessionId}, checking archive...`);
-    const transcriptData = await getSessionTranscriptData(sessionIdObj);
+    // If no active session runtime, check if session exists in database
+    console.log(`[Transcript API] No active runtime for session ${sessionId}, checking if session exists...`);
+    const sessionActive = await isSessionActive(sessionIdObj);
     
-    // Transform the archived data to match frontend's expected format
-    const transcript = transcriptData.segments.map(segment => ({
-      text: segment.text,
-      role: segment.role,
-      isFinal: true, // All cached segments are final
-      startMs: segment.startMs,
-    }));
-
-    console.log(`[Transcript API] Returning archived transcript for session ${sessionId}: ${transcript.length} segments`);
-    res.json({ transcript });
+    if (!sessionActive) {
+      console.log(`[Transcript API] Session ${sessionId} not found or not active, returning empty array`);
+      res.json({ transcript: [] });
+      return;
+    }
+    
+    // Session exists but no runtime (not recording yet), return empty array
+    console.log(`[Transcript API] Session ${sessionId} exists but no runtime (not recording yet), returning empty array`);
+    res.json({ transcript: [] });
   } catch (error) {
     console.error("Failed to fetch session transcript:", error);
-    // If transcript doesn't exist in storage either, return empty array instead of error
-    if (error instanceof Error && (error.message.includes("not found") || error.message.includes("Session not found") || error.message.includes("StorageUnknownError"))) {
-      console.log(`[Transcript API] No transcript found for session ${sessionId}, returning empty array`);
-      res.json({ transcript: [] });
-    } else {
-      res.status(500).json({ error: "Failed to fetch transcript" });
-    }
+    // If any other error occurs, return empty array
+    console.log(`[Transcript API] Error fetching transcript for session ${sessionId}, returning empty array`);
+    res.json({ transcript: [] });
   }
 });
 
