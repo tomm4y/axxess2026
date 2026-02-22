@@ -486,9 +486,6 @@ const HealthSafeLogin: React.FC = () => {
       <footer style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
           <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
-          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontWeight: 600, margin: 0 }}>
-            © 2026 HealthSafe. All rights reserved.
-          </p>
         </div>
       </footer>
     </div>

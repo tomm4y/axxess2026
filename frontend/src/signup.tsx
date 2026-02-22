@@ -628,6 +628,12 @@ const HealthSafeSignUp: React.FC = () => {
           </div>
         </div>
       </div>
+    {/* Footer */}
+      <footer style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
+        </div>
+      </footer>
     </div>
   );
 };
