@@ -164,6 +164,16 @@ export class SockMan {
     return this.assignedSockets.get(sessionId.toString()) ?? null;
   }
 
+  getSessionIdForUser(userId: UserId): SessionId | null {
+    const userIdStr = userId.toString();
+    for (const [sessionId, sockets] of this.assignedSockets.entries()) {
+      if (sockets.clinicianUserId === userIdStr || sockets.patientUserId === userIdStr) {
+        return SessionId.create(sessionId);
+      }
+    }
+    return null;
+  }
+
   sendToUser(userId: UserId, message: unknown): boolean {
     const ws = this.getUnassignedSocket(userId);
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -781,7 +791,7 @@ export function createSockManWebSocketServer(sockMan: SockMan, httpServer: HttpS
             if (parsed.type === "start") {
               if (
                 (parsed.sampleRate && parsed.sampleRate !== sockMan.config.audio.sampleRate) ||
-                (parsed.channels && parsed.channels !== sockMan.config.audio.channels) ||
+                (parsed.channels && parsed.sampleRate !== sockMan.config.audio.channels) ||
                 (parsed.format && parsed.format !== sockMan.config.audio.encoding)
               ) {
                 sendJson(ws, {
@@ -802,6 +812,7 @@ export function createSockManWebSocketServer(sockMan: SockMan, httpServer: HttpS
               }
 
               sockMan.startDeepgram(SessionId.create(sessionId));
+              sockMan.broadcastToSession(SessionId.create(sessionId), { type: "recording_started", sessionId });
               return;
             }
 
@@ -809,6 +820,7 @@ export function createSockManWebSocketServer(sockMan: SockMan, httpServer: HttpS
               const sessionId = parsed.sessionId;
               if (sessionId) {
                 sockMan.stopDeepgram(SessionId.create(sessionId));
+                sockMan.broadcastToSession(SessionId.create(sessionId), { type: "recording_stopped", sessionId });
                 const rt = sockMan.getSessionRuntime(SessionId.create(sessionId));
                 sendJson(ws, {
                   type: "stopped",
@@ -822,6 +834,12 @@ export function createSockManWebSocketServer(sockMan: SockMan, httpServer: HttpS
             }
 
             return;
+          } else {
+            // Binary audio data - find the session this user belongs to and forward
+            const sessionId = sockMan.getSessionIdForUser(userIdObj);
+            if (sessionId) {
+              sockMan.forwardAudio(sessionId, data);
+            }
           }
         } catch (err) {
           sendJson(ws, {
