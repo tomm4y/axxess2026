@@ -387,12 +387,31 @@ app.get("/api/session/:sessionId/details", async (req, res) => {
       );
     }
 
+    // Run diagnostic agent on the transcript if segments exist
+    let agentResult: { extraction: any; icd: any; summary: string } | null = null;
+    if (transcriptData?.segments?.length) {
+      try {
+        const conversation = transcriptData.segments
+          .filter((s: any) => s.text?.trim())
+          .map((s: any) => `${s.role ?? "Unknown"}: ${s.text}`)
+          .join("\n");
+
+        if (conversation.trim()) {
+          agentResult = await diagnosticAgent(conversation);
+        }
+      } catch (e) {
+        console.error("Diagnostic agent failed for session", sessionId, e);
+        agentResult = null;
+      }
+    }
+
     res.json({
       roomId,
       sessionId,
       transcriptData,
       recordingUrl,
       audioFragments,
+      agentResult,
     });
   } catch (error) {
     console.error("Failed to fetch session details:", error);
