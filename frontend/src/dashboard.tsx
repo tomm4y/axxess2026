@@ -341,15 +341,6 @@ const Dashboard: React.FC = () => {
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-end", paddingBottom: 48 }}>
           {/* Left copy */}
           <div>
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              background: "rgba(255,255,255,0.18)", borderRadius: 50, padding: "5px 14px", marginBottom: 14,
-            }}>
-              <LucideUsers size={13} color="white" />
-              <span style={{ fontSize: 12, color: "white", fontWeight: 800, letterSpacing: 0.5 }}>
-                {isClinician ? "Clinician Portal" : "Patient Portal"}
-              </span>
-            </div>
             <h1 style={{ color: "white", fontSize: 42, fontWeight: 900, margin: "0 0 10px", letterSpacing: -1.5, lineHeight: 1.05 }}>
               {isClinician ? "My Patients" : "My Doctors"}
             </h1>
@@ -358,23 +349,6 @@ const Dashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Stat chips */}
-          <div style={{ display: "flex", gap: 14, paddingBottom: 4 }}>
-            {[
-              { label: isClinician ? "Total Patients" : "My Doctors", value: loading ? "—" : String(persons.length), icon: <LucideUsers size={18} color="rgba(255,255,255,0.8)" /> },
-              { label: "Sessions", value: "0", icon: <LucideActivity size={18} color="rgba(255,255,255,0.8)" /> },
-              { label: "This Month", value: "0", icon: <LucideCalendar size={18} color="rgba(255,255,255,0.8)" /> },
-            ].map(({ label, value, icon }) => (
-              <div key={label} style={{
-                background: "rgba(255,255,255,0.15)", border: "2px solid rgba(255,255,255,0.25)",
-                borderRadius: 18, padding: "16px 20px", minWidth: 110, textAlign: "center",
-              }}>
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>{icon}</div>
-                <div style={{ color: "white", fontSize: 26, fontWeight: 900, lineHeight: 1 }}>{value}</div>
-                <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginTop: 4 }}>{label}</div>
-              </div>
-            ))}
-          </div>
         </div>
 
         <div style={{ marginBottom: -2, marginLeft: -48, marginRight: -48 }}>
@@ -556,12 +530,12 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer wave */}
-      <div style={{ position: "relative", height: 60, background: "linear-gradient(160deg, #ff4d7d 0%, #e91e8c 100%)", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-          <WideWave color="#fdf6fa" flip={true} />
+      {/* Footer */}
+      <footer className='mt-10' style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
         </div>
-      </div>
+      </footer>
 
       {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
     </div>
