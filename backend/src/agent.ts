@@ -2,7 +2,7 @@ import { callLLM } from "./openai";
 
 export async function diagnosticAgent(conversation: string) {
 
-  // 1️⃣ Extract medical data
+  // Extract medical data
   const extractionPrompt = [
     {
       role: "system",
@@ -26,7 +26,7 @@ export async function diagnosticAgent(conversation: string) {
 
   const extraction = await callLLM(extractionPrompt);
 
-  // 2️⃣ Map ICD code
+  // Map ICD code
   const icdPrompt = [
     {
       role: "system",
@@ -40,7 +40,7 @@ export async function diagnosticAgent(conversation: string) {
 
   const icd = await callLLM(icdPrompt);
 
-  // 3️⃣ Patient-friendly summary
+  // Patient-friendly summary
   const summaryPrompt = [
     {
       role: "system",
