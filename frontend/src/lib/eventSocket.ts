@@ -84,9 +84,11 @@ export class EventSocket {
   private ws: WebSocket | null = null
   private userId: string | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
+  private maxReconnectAttempts = 10
   private isIntentionalClose = false
+  private pendingReconnect = false
 
   private handlers = {
     session_invite: new Set<Handler<SessionInviteEvent>>(),
@@ -105,6 +107,25 @@ export class EventSocket {
     return `${protocol}//${window.location.host}/ws`
   }
 
+  private startKeepalive() {
+    this.stopKeepalive()
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }))
+      } else if (this.ws?.readyState === WebSocket.CLOSED || this.ws?.readyState === WebSocket.CLOSING) {
+        console.log('[EventSocket] Keepalive detected closed connection, reconnecting...')
+        this.scheduleReconnect()
+      }
+    }, 10000)
+  }
+
+  private stopKeepalive() {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer)
+      this.keepaliveTimer = null
+    }
+  }
+
   open(userId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -114,6 +135,7 @@ export class EventSocket {
 
       this.userId = userId
       this.isIntentionalClose = false
+      this.pendingReconnect = false
       const url = `${this.getWsUrl()}?userId=${encodeURIComponent(userId)}`
 
       try {
@@ -124,15 +146,20 @@ export class EventSocket {
       }
 
       this.ws.onopen = () => {
+        console.log('[EventSocket] Connected')
         this.reconnectAttempts = 0
+        this.startKeepalive()
         resolve()
       }
 
       this.ws.onerror = (error) => {
+        console.error('[EventSocket] Error:', error)
         reject(error)
       }
 
       this.ws.onclose = () => {
+        console.log('[EventSocket] Closed')
+        this.stopKeepalive()
         if (!this.isIntentionalClose) {
           this.scheduleReconnect()
         }
@@ -161,22 +188,29 @@ export class EventSocket {
   }
 
   private scheduleReconnect() {
-    if (!this.userId || this.reconnectAttempts >= this.maxReconnectAttempts) {
+    if (!this.userId || this.reconnectAttempts >= this.maxReconnectAttempts || this.pendingReconnect) {
       return
     }
 
+    this.pendingReconnect = true
     this.reconnectAttempts++
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    const delay = Math.min(1000 * Math.pow(2, Math.min(this.reconnectAttempts, 5)), 30000)
+
+    console.log(`[EventSocket] Scheduling reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`)
 
     this.reconnectTimer = setTimeout(() => {
-      if (this.userId) {
-        this.open(this.userId).catch(() => {})
+      this.pendingReconnect = false
+      if (this.userId && !this.isIntentionalClose) {
+        this.open(this.userId).catch((err) => {
+          console.error('[EventSocket] Reconnect failed:', err)
+        })
       }
     }, delay)
   }
 
   close(): void {
     this.isIntentionalClose = true
+    this.stopKeepalive()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -191,6 +225,16 @@ export class EventSocket {
 
   isOpen(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
+  }
+
+  ensureConnected(): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve()
+    }
+    if (this.userId) {
+      return this.open(this.userId)
+    }
+    return Promise.reject(new Error('No userId set'))
   }
 
   private register<K extends keyof typeof this.handlers>(
@@ -239,21 +283,21 @@ export class EventSocket {
   }
 
   respondToInvite(accept: boolean): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'session_invite_response', accept }))
-    }
+    this.ensureConnected().then(() => {
+      this.ws?.send(JSON.stringify({ type: 'session_invite_response', accept }))
+    }).catch(console.error)
   }
 
   startTranscription(sessionId: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'start', sessionId }))
-    }
+    this.ensureConnected().then(() => {
+      this.ws?.send(JSON.stringify({ type: 'start', sessionId }))
+    }).catch(console.error)
   }
 
   stopTranscription(sessionId: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'stop', sessionId }))
-    }
+    this.ensureConnected().then(() => {
+      this.ws?.send(JSON.stringify({ type: 'stop', sessionId }))
+    }).catch(console.error)
   }
 }
 

@@ -109,6 +109,24 @@ export async function getCurrentUser(): Promise<UserResponse | null> {
   return response.json()
 }
 
+export async function getUserById(userId: string): Promise<{ id: string; name: string; email: string; is_clinician: boolean } | null> {
+  try {
+    const response = await fetch(`${API_URL}/debug/user?uuid=${encodeURIComponent(userId)}`)
+
+    if (!response.ok) {
+      console.error('[getUserById] Failed with status:', response.status)
+      return null
+    }
+
+    const data = await response.json()
+    console.log('[getUserById] Response for', userId, ':', data)
+    return data
+  } catch (error) {
+    console.error('[getUserById] Error:', error)
+    return null
+  }
+}
+
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem('access_token')
 }

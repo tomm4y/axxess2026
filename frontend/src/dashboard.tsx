@@ -1,16 +1,21 @@
 
-import { LucideQrCode, LucideUser, LucideX, LucideChevronRight } from 'lucide-react';
+import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideVideo } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { getCurrentUser } from './lib/api';
+import { getCurrentUser, getUserById } from './lib/api';
+import { eventSocket } from './lib/eventSocket';
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 
-interface Person {
+interface Room {
   id: string;
-  name: string;
-  specialty?: string;
-  imageUrl?: string;
+  clinician: string;
+  patient: string;
+}
+
+interface RoomWithNames extends Room {
+  clinician_name: string;
+  patient_name: string;
 }
 
 interface UserData {
@@ -111,11 +116,18 @@ const QRModal: React.FC<{ qrCodeData: string; qrLoading: boolean; onClose: () =>
 
 // ─── Desktop person row ───────────────────────────────────────────────────────
 
-const PersonRow: React.FC<{ person: Person; onClick: () => void }> = ({ person, onClick }) => {
+const PersonRow: React.FC<{ 
+  room: RoomWithNames; 
+  isClinician: boolean; 
+  onClick: () => void;
+  onCreateSession: (roomId: string) => void;
+}> = ({ room, isClinician, onClick, onCreateSession }) => {
   const [hovered, setHovered] = useState(false);
+  
+  const displayName = isClinician ? room.patient_name : room.clinician_name;
+  
   return (
-    <button
-      onClick={onClick}
+    <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -123,16 +135,18 @@ const PersonRow: React.FC<{ person: Person; onClick: () => void }> = ({ person, 
         border: `2px solid ${hovered ? "#e91e8c" : "#f0d0e8"}`,
         borderRadius: 16, padding: "14px 18px",
         display: "flex", alignItems: "center", gap: 14,
-        cursor: "pointer", textAlign: "left",
         boxShadow: hovered ? "0 6px 24px rgba(233,30,140,0.14)" : "0 2px 10px rgba(233,30,140,0.05)",
         transition: "all 0.2s ease",
         fontFamily: "'Nunito', 'Poppins', sans-serif",
       }}
     >
-      {person.imageUrl ? (
-        <img src={person.imageUrl} alt={person.name}
-          style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "2px solid #f0d0e8", flexShrink: 0 }} />
-      ) : (
+      <button
+        onClick={onClick}
+        style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 14,
+          cursor: "pointer", textAlign: "left", background: "none", border: "none", padding: 0,
+        }}
+      >
         <div style={{
           width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
           background: "linear-gradient(135deg, #ffe0f0, #ffd0e8)",
@@ -140,13 +154,32 @@ const PersonRow: React.FC<{ person: Person; onClick: () => void }> = ({ person, 
         }}>
           <LucideUser size={22} color="#e91e8c" />
         </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#2d1a2e" }}>{displayName}</div>
+        </div>
+      </button>
+      
+      {isClinician && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onCreateSession(room.id); }}
+          style={{
+            background: "linear-gradient(to right, #ED385A, #E73A8A)",
+            color: "white", border: "none", borderRadius: 50,
+            padding: "8px 16px", fontSize: 13, fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+            boxShadow: "0 4px 12px rgba(233,30,140,0.25)",
+            transition: "transform 0.2s",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.03)"}
+          onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+        >
+          <LucideVideo size={16} />
+          Create Session
+        </button>
       )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: "#2d1a2e" }}>{person.name}</div>
-        {person.specialty && <div style={{ fontSize: 13, fontWeight: 600, color: "#cca0bb", marginTop: 2 }}>{person.specialty}</div>}
-      </div>
+      
       <LucideChevronRight size={18} color={hovered ? "#e91e8c" : "#cca0bb"} style={{ flexShrink: 0, transition: "color 0.2s" }} />
-    </button>
+    </div>
   );
 };
 
@@ -157,7 +190,7 @@ const Dashboard: React.FC = () => {
   const [user, setUser] = useState<UserData | null>(null);
   const [isClinician, setIsClinician] = useState(false);
   
-  const [persons, setPersons] = useState<Person[]>([]);
+  const [rooms, setRooms] = useState<RoomWithNames[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [showQRModal, setShowQRModal] = useState(false);
@@ -180,10 +213,73 @@ const Dashboard: React.FC = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setPersons(data.rooms || []);
+        const rawRooms: Room[] = data.rooms || [];
+        console.log('[Dashboard] Fetched rooms:', rawRooms);
+        
+        const roomsWithNames = await Promise.all(
+          rawRooms.map(async (room) => {
+            try {
+              const [clinicianData, patientData] = await Promise.all([
+                getUserById(room.clinician).catch(e => { console.error('[Dashboard] Failed to fetch clinician:', e); return null; }),
+                getUserById(room.patient).catch(e => { console.error('[Dashboard] Failed to fetch patient:', e); return null; })
+              ]);
+              console.log('[Dashboard] Room:', room.id, 'clinician:', clinicianData, 'patient:', patientData);
+              return {
+                ...room,
+                clinician_name: clinicianData?.name || 'Doctor',
+                patient_name: patientData?.name || 'Patient'
+              };
+            } catch (e) {
+              console.error('[Dashboard] Failed to process room:', room.id, e);
+              return {
+                ...room,
+                clinician_name: 'Doctor',
+                patient_name: 'Patient'
+              };
+            }
+          })
+        );
+        
+        console.log('[Dashboard] Rooms with names:', roomsWithNames);
+        setRooms(roomsWithNames);
+      } else {
+        console.error('[Dashboard] Failed to fetch rooms:', response.status);
       }
     } catch (error) {
       console.error('Failed to fetch rooms:', error);
+    }
+  };
+
+  const handleCreateSession = async (roomId: string) => {
+    if (!user?.id) {
+      alert('User not loaded');
+      return;
+    }
+    
+    try {
+      await eventSocket.ensureConnected();
+    } catch (error) {
+      console.error('Failed to connect socket:', error);
+      alert('Connection error. Please try again.');
+      return;
+    }
+    
+    const token = localStorage.getItem('access_token');
+    try {
+      const response = await fetch(`/create_session?room=${roomId}&creator=${user.id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        alert('Session invite sent!');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create session');
+      }
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      alert('Failed to create session');
     }
   };
 
@@ -193,6 +289,12 @@ const Dashboard: React.FC = () => {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  useEffect(() => {
+    if (user?.id) {
+      eventSocket.ensureConnected().catch(console.error);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const fetchUserAndData = async () => {
@@ -316,85 +418,82 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handlePersonClick = (_person: Person) => navigate('/transcript');
   const primaryAction = isClinician ? handleShowQRCode : handleScanQRCode;
 
-  // ── Mobile ────────────────────────────────────
+  // ── Mobile (pixel-faithful to original) ────────────────────────────────────
 
   if (!isDesktop) {
     return (
-    <div className='justify-center' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column"}}>
+      <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa", position: "relative" }}>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
         {/* Decorative Background Blobs */}
-
+        <img src='/Circle.svg' style={{ position: 'absolute', right: -80, top: '50%', transform: 'translateY(-50%)', width: 200, height: 200, pointerEvents: 'none', zIndex: 0 }} />
+        <img src='/Circle.svg' style={{ position: 'absolute', left: -100, bottom: 80, width: 240, height: 240, pointerEvents: 'none', zIndex: 0 }} />
 
         {/* Header */}
-        <header className="fixed top-0 w-full max-w-md bg-gradient-to-r flex py-4 items-end to-[#E73A8A] from-[#ED385A] px-4 z-20">
-          <div className="flex mt-2 h-full text-white text-2xl font-semibold w-40">
+        <header style={{ position: 'fixed', top: 0, left: 0, right: 0, maxWidth: '28rem', margin: '0 auto', background: 'linear-gradient(to right, #ED385A, #E73A8A)', padding: '1rem 1rem', display: 'flex', alignItems: 'flex-end', zIndex: 20 }}>
+          <div style={{ display: 'flex', marginTop: '0.5rem', height: '100%', color: 'white', fontSize: '1.5rem', fontWeight: 600, width: '10rem' }}>
             <img src='/Logo.svg' alt="Logo" />
           </div>
         </header>
 
         {/* Main Content Area */}
-        <main className="flex flex-col overflow-y-auto mt-20 px-5 pt-4 relative z-10">
+        <main style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', marginTop: 80, padding: '1rem 1.25rem 6rem', position: 'relative', zIndex: 10 }}>
 
-          <h1 className="text-[#E73A5B] text-xl font-sf-semibold mb-2">
+          <h1 style={{ color: '#E73A5B', fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>
             {isClinician ? 'My Patients' : 'My Doctors'}
           </h1>
-          <p className="text-gray-500 text-sm mb-6">
+          <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
             {isClinician ? 'Manage your patient consultations' : 'Connect with your healthcare providers'}
           </p>
 
           {/* Persons list */}
-          <div className="flex flex-col gap-3 mb-6">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
             {loading ? (
-              <div className="flex flex-col gap-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-gray-100 rounded-xl p-4 animate-pulse">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
-                      <div className="flex-1">
-                        <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-16"></div>
+                  <div key={i} style={{ background: '#f3f4f6', borderRadius: '0.75rem', padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ width: 48, height: 48, background: '#e5e7eb', borderRadius: '50%' }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ height: 16, background: '#e5e7eb', borderRadius: 4, width: 96, marginBottom: 8 }} />
+                        <div style={{ height: 12, background: '#e5e7eb', borderRadius: 4, width: 64 }} />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : persons.length === 0 ? (
-              <div className="bg-[#FBE4EE] rounded-2xl p-8 flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
-                  <LucideUser className="text-[#E73A5B]" size={32} />
+            ) : rooms.length === 0 ? (
+              <div style={{ background: '#FBE4EE', borderRadius: '1rem', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ width: 64, height: 64, background: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <LucideUser style={{ color: '#E73A5B' }} size={32} />
                 </div>
-                <h3 className="text-gray-800 font-sf-semibold text-lg mb-2">
+                <h3 style={{ color: '#1f2937', fontWeight: 600, fontSize: '1.125rem', marginBottom: 8 }}>
                   {isClinician ? 'No Patients Yet' : 'No Doctors Yet'}
                 </h3>
-                <p className="text-gray-600 text-sm mb-4">
+                <p style={{ color: '#4b5563', fontSize: '0.875rem', marginBottom: 16 }}>
                   {isClinician
                     ? 'Show your QR code to patients to link them to your practice.'
                     : "Scan a doctor's QR code to get started with your first consultation."}
                 </p>
               </div>
             ) : (
-              persons.map((person) => (
+              rooms.map((room) => (
                 <button
-                  key={person.id}
-                  onClick={() => handlePersonClick(person)}
-                  className="bg-white rounded-xl p-4 shadow-[0_4px_20px_rgba(0,0,0,0.08)] flex items-center gap-3 hover:shadow-[0_4px_20px_rgba(233,30,140,0.15)] transition-shadow text-left w-full"
+                  key={room.id}
+                  onClick={() => navigate('/transcript')}
+                  style={{ background: 'white', borderRadius: '0.75rem', padding: '1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: '0.75rem', textAlign: 'left', width: '100%', border: 'none', cursor: 'pointer' }}
                 >
-                  {person.imageUrl ? (
-                    <img src={person.imageUrl} alt={person.name} className="w-12 h-12 rounded-full object-cover border-2 border-[#FBE4EE]" />
-                  ) : (
-                    <div className="w-12 h-12 bg-[#FBE4EE] rounded-full flex items-center justify-center">
-                      <LucideUser className="text-[#E73A5B]" size={24} />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <h3 className="text-gray-800 font-sf-semibold">{person.name}</h3>
-                    {person.specialty && <p className="text-gray-500 text-sm">{person.specialty}</p>}
+                  <div style={{ width: 48, height: 48, background: '#FBE4EE', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <LucideUser style={{ color: '#E73A5B' }} size={24} />
                   </div>
-                  <div className="text-[#E73A5B]">
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ color: '#1f2937', fontWeight: 600, margin: 0 }}>
+                      {isClinician ? room.patient_name : room.clinician_name}
+                    </h3>
+                  </div>
+                  <div style={{ color: '#E73A5B' }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="9,18 15,12 9,6" />
                     </svg>
@@ -403,53 +502,52 @@ const Dashboard: React.FC = () => {
               ))
             )}
           </div>
-
-          {/* FAB */}
-          <div className="bg-[#FBE4EE] rounded-2xl p-8 flex flex-col items-center text-center z-40">
-            {isClinician ? (
-              <button onClick={handleShowQRCode}
-                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg">
-                <LucideQrCode size={24} />
-                Show Patient Your QR Code
-              </button>
-            ) : (
-              <button onClick={handleScanQRCode} disabled={scanning}
-                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg disabled:opacity-70">
-                {scanning ? (
-                  <><div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Scanning...</>
-                ) : (
-                  <><LucideQrCode size={24} />Scan Doctor's QR Code</>
-                )}
-              </button>
-            )}
-          </div>
         </main>
 
+        {/* FAB */}
+        <div style={{ position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: '28rem', width: '100%', padding: '0 1.25rem' }}>
+          {isClinician ? (
+            <button onClick={handleShowQRCode}
+              style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: 'pointer' }}>
+              <LucideQrCode size={24} />
+              Show Patient Your QR Code
+            </button>
+          ) : (
+            <button onClick={handleScanQRCode} disabled={scanning}
+              style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: scanning ? 'not-allowed' : 'pointer', opacity: scanning ? 0.7 : 1 }}>
+              {scanning ? (
+                <><div style={{ width: 24, height: 24, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Scanning...</>
+              ) : (
+                <><LucideQrCode size={24} />Scan Doctor's QR Code</>
+              )}
+            </button>
+          )}
+        </div>
 
         {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
 
         {showScannerModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-6 max-w-sm w-full relative">
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 24, maxWidth: 384, width: '100%', position: 'relative' }}>
               <button
                 onClick={stopScanner}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}
               >
                 <LucideX size={24} />
               </button>
               
-              <h2 className="text-[#E73A5B] text-xl font-sf-semibold mb-2 text-center">
+              <h2 style={{ color: '#E73A5B', fontSize: '1.25rem', fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>
                 Scan Doctor's QR Code
               </h2>
-              <p className="text-gray-500 text-sm mb-6 text-center">
+              <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: 24, textAlign: 'center' }}>
                 Point your camera at the doctor's QR code to connect
               </p>
               
-              <div id="qr-reader" className="w-full mb-6" />
+              <div id="qr-reader" style={{ width: '100%', marginBottom: 24 }} />
               
               <button
                 onClick={stopScanner}
-                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-3 font-sf-semibold"
+                style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
               >
                 Cancel
               </button>
@@ -463,7 +561,7 @@ const Dashboard: React.FC = () => {
   // ── Desktop ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className='mt-10' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
+    <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes shimmer{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
 
@@ -498,14 +596,14 @@ const Dashboard: React.FC = () => {
       <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: "40px 48px 56px", display: "grid", gridTemplateColumns: "1fr 300px", gap: 28, alignItems: "start" }}>
 
         {/* Left — list */}
-        <div className=''>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#2d1a2e", letterSpacing: -0.5 }}>
               {isClinician ? "Patient List" : "Your Doctors"}
             </h2>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-            {!loading && persons.length > 0 && (
+            {!loading && rooms.length > 0 && (
               <span style={{ fontSize: 13, fontWeight: 700, color: "#cca0bb" }}>
-                {persons.length} {persons.length === 1 ? "person" : "people"}
+                {rooms.length} {rooms.length === 1 ? "person" : "people"}
               </span>
             )}
           </div>
@@ -527,7 +625,7 @@ const Dashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-          ) : persons.length === 0 ? (
+          ) : rooms.length === 0 ? (
             /* Desktop empty state */
             <div style={{
               background: "linear-gradient(135deg, #fff0f6, #ffe0f0)",
@@ -550,18 +648,39 @@ const Dashboard: React.FC = () => {
                   ? "Show your QR code to patients to link them to your practice."
                   : "Scan a doctor's QR code to get started with your first consultation."}
               </p>
+              <button onClick={primaryAction} style={{
+                background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+                color: "white", border: "none", borderRadius: 50,
+                padding: "14px 32px", fontSize: 16, fontWeight: 800,
+                cursor: "pointer", fontFamily: "'Nunito', sans-serif",
+                boxShadow: "0 6px 20px rgba(233,30,140,0.3)",
+                display: "flex", alignItems: "center", gap: 8,
+                transition: "transform 0.2s, box-shadow 0.2s",
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 10px 28px rgba(233,30,140,0.4)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(233,30,140,0.3)"; }}
+              >
+                <LucideQrCode size={18} />
+                {isClinician ? "Show My QR Code" : "Scan QR Code"}
+              </button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {persons.map((person) => (
-                <PersonRow key={person.id} person={person} onClick={() => handlePersonClick(person)} />
+              {rooms.map((room) => (
+                <PersonRow 
+                  key={room.id} 
+                  room={room} 
+                  isClinician={isClinician}
+                  onClick={() => navigate('/transcript')} 
+                  onCreateSession={handleCreateSession}
+                />
               ))}
             </div>
           )}
         </div>
 
         {/* Right sidebar */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 50 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
           {/* QR action card */}
           <div style={{
@@ -629,7 +748,6 @@ const Dashboard: React.FC = () => {
               </div>
               {[
                 { label: "Role", value: isClinician ? "Clinician" : "Patient" },
-                { label: "ID", value: `#${user.id.slice(0, 8)}` },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f9eef5" }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "#cca0bb" }}>{label}</span>
@@ -638,19 +756,6 @@ const Dashboard: React.FC = () => {
               ))}
             </div>
           )}
-
-          {/* Tip card */}
-          <div style={{
-            background: "linear-gradient(135deg, #fff0f6, #ffe0f0)",
-            borderRadius: 16, padding: "16px",
-            border: "2px solid #f0d0e8",
-          }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#e97db0", lineHeight: 1.6 }}>
-              💡 {isClinician
-                ? "Sessions are created automatically when a patient scans your QR code."
-                : "Each QR code links you to a specific doctor's practice."}
-            </p>
-          </div>
         </div>
       </div>
 
