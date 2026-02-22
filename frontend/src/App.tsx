@@ -231,7 +231,7 @@ const App: React.FC = () => {
               }}
                 onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.25)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.18)"; }}
-              >Create Free Account</Link>
+              >Create Account</Link>
               <Link to="/login" style={{
                 padding: "14px 32px", borderRadius: 50, fontSize: 17, fontFamily: "SF-Pro-Display-Semibold",
                 color: "white", textDecoration: "none",
