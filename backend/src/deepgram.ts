@@ -1,7 +1,8 @@
 import type { Server as HttpServer } from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import { UserId, RoomId, SessionId } from "./types";
-import { getOrCreateRoom, getRoomById, createSession } from "./db";
+import { getOrCreateRoom, getRoomById, createSession, endSession } from "./db";
+import { putRecording } from "./storage";
 
 export type Role = "Doctor" | "Patient";
 
@@ -54,6 +55,9 @@ type SessionRuntime = {
   firstSpeakerSeen: string | null;
   clinicianUserId: string;
   patientUserId: string;
+  roomId: string;
+  audioChunks: Buffer[];
+  recording: boolean;
 };
 
 type PendingSessionInvite = {
@@ -63,11 +67,23 @@ type PendingSessionInvite = {
   inviteeSocket: WebSocket;
   clinicianSocket: WebSocket;
   patientSocket: WebSocket;
+  clinicianUserId: string;
+  patientUserId: string;
+  creatorSocket: WebSocket;
+};
+
+type SessionSockets = {
+  clinician: WebSocket;
+  patient: WebSocket;
+  clinicianUserId: string;
+  patientUserId: string;
+  onClinicianClose?: () => void;
+  onPatientClose?: () => void;
 };
 
 export class SockMan {
   private readonly unassignedSockets = new Map<string, WebSocket>();
-  private readonly assignedSockets = new Map<string, { clinician: WebSocket; patient: WebSocket }>();
+  private readonly assignedSockets = new Map<string, SessionSockets>();
   private readonly sessionRuntimes = new Map<string, SessionRuntime>();
   private readonly pendingSessionInvites = new Map<string, PendingSessionInvite>();
 
@@ -107,13 +123,44 @@ export class SockMan {
     this.logger.info({ userId: key }, "Socket unregistered");
   }
 
-  assignSocketsToSession(sessionId: SessionId, clinicianWs: WebSocket, patientWs: WebSocket): void {
+  assignSocketsToSession(sessionId: SessionId, clinicianWs: WebSocket, patientWs: WebSocket, clinicianUserId: string, patientUserId: string, roomId: string): void {
     const key = sessionId.toString();
-    this.assignedSockets.set(key, { clinician: clinicianWs, patient: patientWs });
+    
+    const sessionSockets: SessionSockets = {
+      clinician: clinicianWs,
+      patient: patientWs,
+      clinicianUserId,
+      patientUserId,
+    };
+    
+    this.assignedSockets.set(key, sessionSockets);
+
+    const handleClose = async (role: 'clinician' | 'patient') => {
+      const rt = this.sessionRuntimes.get(key);
+      if (rt && rt.recording) {
+        await this.endSessionAndSaveRecording(SessionId.create(key));
+      }
+      
+      const sockets = this.assignedSockets.get(key);
+      if (sockets) {
+        const other = role === 'clinician' ? sockets.patient : sockets.clinician;
+        if (other.readyState === WebSocket.OPEN) {
+          other.send(JSON.stringify({ type: "session_ended", sessionId: key }));
+        }
+      }
+      
+      this.assignedSockets.delete(key);
+      this.sessionRuntimes.delete(key);
+      this.logger.info({ sessionId: key }, `Session ended (${role} disconnected)`);
+    };
+
+    clinicianWs.once("close", () => handleClose('clinician'));
+    patientWs.once("close", () => handleClose('patient'));
+
     this.logger.info({ sessionId: key }, "Sockets assigned to session");
   }
 
-  getSessionSockets(sessionId: SessionId): { clinician: WebSocket; patient: WebSocket } | null {
+  getSessionSockets(sessionId: SessionId): SessionSockets | null {
     return this.assignedSockets.get(sessionId.toString()) ?? null;
   }
 
@@ -184,6 +231,7 @@ export class SockMan {
 
     const inviteeId = creatorId.toString() === room.clinician ? patientId : clinicianId;
     const inviteeSocket = creatorId.toString() === room.clinician ? patientSocket : clinicianSocket;
+    const creatorSocket = creatorId.toString() === room.clinician ? clinicianSocket : patientSocket;
 
     this.pendingSessionInvites.set(inviteeId.toString(), {
       roomId,
@@ -192,6 +240,9 @@ export class SockMan {
       inviteeSocket,
       clinicianSocket,
       patientSocket,
+      clinicianUserId: room.clinician,
+      patientUserId: room.patient,
+      creatorSocket,
     });
 
     inviteeSocket.send(JSON.stringify({
@@ -214,22 +265,40 @@ export class SockMan {
 
     if (!accept) {
       this.logger.info({ inviteeId: inviteeId.toString() }, "Session invite declined");
+      if (pending.creatorSocket.readyState === WebSocket.OPEN) {
+        pending.creatorSocket.send(JSON.stringify({ type: "session_declined", roomId: pending.roomId.toString() }));
+      }
       return null;
     }
 
     const sessionId = await createSession(pending.roomId);
+    const roomIdStr = pending.roomId.toString();
 
-    this.assignSocketsToSession(sessionId, pending.clinicianSocket, pending.patientSocket);
+    this.assignSocketsToSession(
+      sessionId, 
+      pending.clinicianSocket, 
+      pending.patientSocket,
+      pending.clinicianUserId,
+      pending.patientUserId,
+      roomIdStr
+    );
 
     this.unassignedSockets.delete(pending.inviteeId.toString());
     const creatorIdStr = pending.creatorId.toString();
     this.unassignedSockets.delete(creatorIdStr);
 
-    this.broadcastToSession(sessionId, {
+    const sessionStartedMessage = {
       type: "session_started",
       sessionId: sessionId.toString(),
-      roomId: pending.roomId.toString(),
-    });
+      roomId: roomIdStr,
+    };
+
+    if (pending.clinicianSocket.readyState === WebSocket.OPEN) {
+      pending.clinicianSocket.send(JSON.stringify(sessionStartedMessage));
+    }
+    if (pending.patientSocket.readyState === WebSocket.OPEN) {
+      pending.patientSocket.send(JSON.stringify(sessionStartedMessage));
+    }
 
     this.logger.info({ sessionId: sessionId.toString() }, "Session created and sockets assigned");
 
@@ -262,6 +331,9 @@ export class SockMan {
         firstSpeakerSeen: null,
         clinicianUserId: "",
         patientUserId: "",
+        roomId: "",
+        audioChunks: [],
+        recording: false,
       };
       this.sessionRuntimes.set(key, rt);
     }
@@ -319,12 +391,18 @@ export class SockMan {
         speakerMap: {},
         transcriptSegments: [],
         firstSpeakerSeen: null,
-        clinicianUserId: "",
-        patientUserId: "",
+        clinicianUserId: sockets.clinicianUserId,
+        patientUserId: sockets.patientUserId,
+        roomId: "",
+        audioChunks: [],
+        recording: false,
       };
       this.sessionRuntimes.set(key, rt);
     }
     if (rt.deepgram) return;
+
+    rt.recording = true;
+    rt.audioChunks = [];
 
     const deepgram = this.connectDeepgramLive((event) => {
       const sessionRt = this.sessionRuntimes.get(key);
@@ -366,12 +444,82 @@ export class SockMan {
     });
 
     rt.deepgram = deepgram;
+    this.logger.info({ sessionId: key }, "Recording started");
   }
 
   forwardAudio(sessionId: SessionId, audio: WebSocket.RawData): void {
     const rt = this.sessionRuntimes.get(sessionId.toString());
     if (!rt?.deepgram?.ws || rt.deepgram.ws.readyState !== WebSocket.OPEN) return;
+    
     rt.deepgram.ws.send(audio);
+    
+    if (rt.recording && Buffer.isBuffer(audio)) {
+      rt.audioChunks.push(audio);
+    }
+  }
+
+  async endSessionAndSaveRecording(sessionId: SessionId): Promise<void> {
+    const key = sessionId.toString();
+    const rt = this.sessionRuntimes.get(key);
+    if (!rt) return;
+
+    rt.recording = false;
+
+    if (rt.deepgram) {
+      try {
+        rt.deepgram.close();
+      } catch {
+        // ignore
+      }
+      rt.deepgram = null;
+    }
+
+    if (rt.audioChunks.length > 0 && rt.roomId) {
+      try {
+        const totalLength = rt.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const audioBuffer = Buffer.concat(rt.audioChunks, totalLength);
+        
+        const wavBuffer = this.createWavBuffer(audioBuffer, this.config.audio.sampleRate, this.config.audio.channels);
+        
+        await putRecording(rt.roomId, key, wavBuffer);
+        this.logger.info({ sessionId: key, roomId: rt.roomId, size: wavBuffer.length }, "Recording saved");
+      } catch (error) {
+        this.logger.error({ error, sessionId: key }, "Failed to save recording");
+      }
+    }
+
+    rt.audioChunks = [];
+    
+    try {
+      await endSession(sessionId);
+    } catch (error) {
+      this.logger.error({ error, sessionId: key }, "Failed to end session in database");
+    }
+  }
+
+  private createWavBuffer(audioData: Buffer, sampleRate: number, channels: number): Buffer {
+    const dataSize = audioData.length;
+    const fileSize = 44 + dataSize;
+    
+    const buffer = Buffer.alloc(44 + dataSize);
+    
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(fileSize - 8, 4);
+    buffer.write('WAVE', 8);
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt16LE(channels, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * channels * 2, 28);
+    buffer.writeUInt16LE(channels * 2, 32);
+    buffer.writeUInt16LE(16, 34);
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+    
+    audioData.copy(buffer, 44);
+    
+    return buffer;
   }
 
   stopDeepgram(sessionId: SessionId): void {

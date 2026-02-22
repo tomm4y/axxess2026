@@ -1,9 +1,8 @@
-import { LucideMic, LucideArrowLeft, LucideDownload, LucideCopy, LucideUsers } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router';
+import { LucideMic, LucideArrowLeft, LucideSquare } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { getCurrentUser } from './lib/api';
-
-// ─── Shared Wave Components ───────────────────────────────────────────────────
+import { eventSocket } from './lib/eventSocket';
 
 const WaveDivider: React.FC<{ flip?: boolean; color?: string }> = ({ flip = false, color = "white" }) => (
   <svg viewBox="0 0 400 60" xmlns="http://www.w3.org/2000/svg"
@@ -20,8 +19,6 @@ const WideWave: React.FC<{ color?: string; flip?: boolean }> = ({ color = "white
     <path d="M-10,40 C120,80 240,0 400,40 C560,80 680,5 840,38 C1000,70 1120,10 1280,42 C1380,62 1420,30 1450,38 L1450,80 L-10,80 Z" fill={color} />
   </svg>
 );
-
-// ─── Shared sub-components ────────────────────────────────────────────────────
 
 const RecordingPill: React.FC<{ recording: boolean }> = ({ recording }) => (
   <div style={{
@@ -43,44 +40,68 @@ const RecordingPill: React.FC<{ recording: boolean }> = ({ recording }) => (
   </div>
 );
 
-const MicButton: React.FC<{ recording: boolean; onClick: () => void; size?: number }> = ({ recording, onClick, size = 72 }) => (
+const MicButton: React.FC<{ recording: boolean; onClick: () => void; disabled?: boolean; size?: number }> = ({ recording, onClick, disabled, size = 72 }) => {
+  const handleClick = () => {
+    console.log('[MicButton] Clicked, disabled:', disabled, 'recording:', recording);
+    if (!disabled) {
+      onClick();
+    }
+  };
+  
+  return (
   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
     <button
-      onClick={onClick}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
+      onClick={handleClick}
+      disabled={disabled}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.transform = "scale(1.08)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
       style={{
         width: size, height: size, borderRadius: "50%",
-        background: recording ? "linear-gradient(135deg, #ff4d7d, #e91e8c)" : "white",
-        border: `3px solid ${recording ? "transparent" : "#f0d0e8"}`,
+        background: recording ? "linear-gradient(135deg, #ff4d7d, #e91e8c)" : disabled ? "#e5e7eb" : "white",
+        border: `3px solid ${recording ? "transparent" : disabled ? "#d1d5db" : "#f0d0e8"}`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         boxShadow: recording ? "0 8px 28px rgba(233,30,140,0.45)" : "0 4px 16px rgba(233,30,140,0.12)",
         transition: "all 0.25s ease",
+        opacity: disabled ? 0.6 : 1,
       } as React.CSSProperties}
     >
-      <LucideMic color={recording ? "white" : "#e91e8c"} size={Math.round(size * 0.39)} />
+      {recording ? (
+        <LucideSquare color="white" size={Math.round(size * 0.3)} fill="white" />
+      ) : (
+        <LucideMic color={disabled ? "#9ca3af" : "#e91e8c"} size={Math.round(size * 0.39)} />
+      )}
     </button>
     <span style={{ fontSize: 12, fontWeight: 700, color: "#cca0bb", textTransform: "uppercase", letterSpacing: 0.5 }}>
-      {recording ? "Click to stop" : "Click to record"}
+      {disabled ? "Session Inactive" : recording ? "Tap to stop" : "Tap to record"}
     </span>
   </div>
-);
+  );
+};
 
-const TranscriptBox: React.FC<{ recording: boolean; fullHeight?: boolean }> = ({ recording, fullHeight }) => (
+const TranscriptBox: React.FC<{ recording: boolean; segments: { text: string; role: string | null }[] }> = ({ recording, segments }) => (
   <div style={{
     background: "white", border: `2px solid ${recording ? "#e91e8c" : "#f0d0e8"}`,
     borderRadius: 18, padding: "16px",
-    height: fullHeight ? "100%" : undefined,
-    minHeight: fullHeight ? undefined : 220,
-    flex: fullHeight ? 1 : undefined,
+    minHeight: 220,
     position: "relative",
     boxShadow: recording ? "0 4px 20px rgba(233,30,140,0.15)" : "0 4px 20px rgba(233,30,140,0.07)",
     transition: "border-color 0.2s, box-shadow 0.2s",
   }}>
-    <p style={{ color: "#cca0bb", fontSize: 14, lineHeight: 1.7, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
-      {recording ? "Listening…" : "Click the microphone to start recording your session."}
-    </p>
+    {segments.length === 0 ? (
+      <p style={{ color: "#cca0bb", fontSize: 14, lineHeight: 1.7, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
+        {recording ? "Listening…" : "Tap the microphone to start recording your session."}
+      </p>
+    ) : (
+      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+        {segments.map((seg, i) => (
+          <p key={i} style={{ margin: "0 0 8px", fontSize: 14, lineHeight: 1.6, color: "#2d1a2e" }}>
+            {seg.role && <strong style={{ color: seg.role === "Doctor" ? "#e91e8c" : "#6b7280" }}>{seg.role}: </strong>}
+            {seg.text}
+          </p>
+        ))}
+      </div>
+    )}
     {recording && (
       <div style={{
         position: "absolute", top: 12, right: 12,
@@ -95,31 +116,31 @@ const TranscriptBox: React.FC<{ recording: boolean; fullHeight?: boolean }> = ({
   </div>
 );
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-const Transcript: React.FC = () => {
-
-  interface Person {
-  id: string;
-  name: string;
-  specialty?: string;
-  imageUrl?: string;
-}
-
 interface UserData {
   id: string;
   email: string;
   name: string;
   is_clinician: boolean;
 }
+
+const Transcript: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get('session_id');
+  
+  console.log('[Transcript] Component mounted, sessionId:', sessionId);
+  
   const [recording, setRecording] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  // User state - to determine if clinician or patient
   const [user, setUser] = useState<UserData | null>(null);
   const [isClinician, setIsClinician] = useState(false);
-  
-  const [persons, _setPersons] = useState<Person[]>([]);
+  const [sessionActive, setSessionActive] = useState(false);
+  const [transcriptSegments, setTranscriptSegments] = useState<{ text: string; role: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     const fetchUserAndData = async () => {
@@ -139,6 +160,51 @@ interface UserData {
     fetchUserAndData();
   }, []);
 
+  useEffect(() => {
+    const checkSessionActive = async () => {
+      if (!sessionId) {
+        console.log('[Transcript] No sessionId, skipping active check');
+        return;
+      }
+      
+      try {
+        console.log('[Transcript] Checking session active status...');
+        const response = await fetch(`/api/session/${sessionId}/active`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('[Transcript] Session active status:', data);
+          setSessionActive(data.active);
+        } else {
+          console.log('[Transcript] Failed to check session status:', response.status);
+        }
+      } catch (error) {
+        console.error('[Transcript] Failed to check session status:', error);
+      }
+    };
+    
+    checkSessionActive();
+    const interval = setInterval(checkSessionActive, 5000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const unsubTranscript = eventSocket.registerOnTranscript((event) => {
+      if (event.payload.isFinal) {
+        setTranscriptSegments(prev => [...prev, { text: event.payload.text, role: event.payload.role }]);
+      }
+    });
+    
+    const unsubReady = eventSocket.registerOnReady(() => {
+      console.log('[Transcript] Deepgram ready');
+    });
+    
+    return () => {
+      unsubTranscript();
+      unsubReady();
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -146,6 +212,80 @@ interface UserData {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  const startRecording = async () => {
+    console.log('[Transcript] startRecording called', { sessionId, sessionActive });
+    if (!sessionId || !sessionActive) {
+      console.log('[Transcript] Cannot start: missing sessionId or session not active');
+      return;
+    }
+    
+    try {
+      console.log('[Transcript] Ensuring socket connected...');
+      await eventSocket.ensureConnected();
+      console.log('[Transcript] Socket connected, starting transcription...');
+      eventSocket.startTranscription(sessionId);
+      
+      console.log('[Transcript] Requesting microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      console.log('[Transcript] Microphone access granted');
+      
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+      
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcmData = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i]));
+          pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        eventSocket.sendAudio(new Uint8Array(pcmData.buffer));
+      };
+      
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      
+      console.log('[Transcript] Recording started');
+      setRecording(true);
+    } catch (error) {
+      console.error('[Transcript] Failed to start recording:', error);
+      alert('Failed to start recording. Please check microphone permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (sessionId) {
+      eventSocket.stopTranscription(sessionId);
+    }
+    setRecording(false);
+  };
+
+  const toggleRecording = () => {
+    console.log('[Transcript] toggleRecording called, current recording:', recording);
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
 
   const sharedStyles = (
     <style>{`
@@ -156,7 +296,9 @@ interface UserData {
     `}</style>
   );
 
-  // ── Mobile ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return <div style={{ minHeight: "100vh", background: "#fdf6fa", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading...</div>;
+  }
 
   if (!isDesktop) {
     return (
@@ -166,13 +308,12 @@ interface UserData {
 
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", width: "100%" }}>
 
-          {/* Hero */}
           <div style={{
             background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
             paddingTop: 52, paddingBottom: 0, paddingLeft: 24, paddingRight: 24,
             position: "relative", overflow: "visible",
           }}>
-            <Link to="/" className="absolute top-5 left-5">
+            <Link to="/dashboard" className="absolute top-5 left-5">
               <LucideArrowLeft color="white" size={28} />
             </Link>
             <div style={{ display: "flex", alignItems: "center", marginBlock: 10 }}>
@@ -180,10 +321,10 @@ interface UserData {
             </div>
             <div style={{ marginBottom: 24 }}>
               <h1 style={{ color: "white", fontSize: 26, fontWeight: 900, margin: "0 0 4px", letterSpacing: -0.5, lineHeight: 1.1 }}>
-                Session 12345
+                Session
               </h1>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 14, fontWeight: 600, margin: 0 }}>
-                Live transcription
+                {sessionActive ? "Active session" : "Session inactive"}
               </p>
             </div>
             <div style={{ marginBottom: -2, marginLeft: -24, marginRight: -24 }}>
@@ -191,10 +332,8 @@ interface UserData {
             </div>
           </div>
 
-          {/* Content */}
           <div style={{ flex: 1, background: "white", padding: "28px 24px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-            {/* Doctor card */}
             <div style={{ display: "flex", justifyContent: "center" }}>
               <div style={{
                 background: "linear-gradient(135deg, #fff0f6, #ffe0f0)",
@@ -203,24 +342,26 @@ interface UserData {
                 gap: 10, border: "2px solid #f0d0e8",
                 boxShadow: "0 4px 20px rgba(233,30,140,0.1)", minWidth: 160,
               }}>
-                <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", border: "3px solid white", boxShadow: "0 4px 16px rgba(233,30,140,0.2)" }}>
-                  <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&h=200&auto=format&fit=crop" alt="Dr. X" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg, #ff4d7d, #e91e8c)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(233,30,140,0.2)" }}>
+                  <LucideMic size={32} color="white" />
                 </div>
-                <span style={{ color: "#2d1a2e", fontSize: 15, fontWeight: 800 }}>Dr. X</span>
+                <span style={{ color: "#2d1a2e", fontSize: 15, fontWeight: 800 }}>{isClinician ? "Patient" : "Doctor"}</span>
                 <RecordingPill recording={recording} />
               </div>
             </div>
 
-            {/* Transcript box */}
             <div>
               <h2 style={{ color: "#e91e8c", fontSize: 13, fontWeight: 800, margin: "0 0 8px", letterSpacing: 0.5, textTransform: "uppercase" }}>
                 Transcription
               </h2>
-              <TranscriptBox recording={recording} />
+              <TranscriptBox recording={recording} segments={transcriptSegments} />
             </div>
 
-            {/* Mic */}
-            <MicButton recording={recording} onClick={() => setRecording(!recording)} />
+            <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} />
+            
+            <div style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
+              sessionId: {sessionId || 'none'} | sessionActive: {sessionActive.toString()} | recording: {recording.toString()}
+            </div>
           </div>
 
         </div>
@@ -228,33 +369,27 @@ interface UserData {
     );
   }
 
-  // ── Desktop ─────────────────────────────────────────────────────────────────
-
   return (
     <div className='mt-10' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
       {sharedStyles}
 
-      {/* Hero banner */}
       <section style={{
         background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 45%, #e91e8c 100%)",
         padding: "48px 48px 0", position: "relative", overflow: "visible",
       }}>
-        {/* Blobs */}
         <div style={{ position: "absolute", top: -60, left: -60, width: 260, height: 260, borderRadius: "50%", background: "rgba(255,255,255,0.07)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", top: 20, right: -40, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.05)", pointerEvents: "none" }} />
 
-        <div className="flex flex-col" style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", paddingBottom: 40 }}>
-
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", paddingBottom: 40 }}>
           <div>
             <h1 style={{ color: "white", fontSize: 38, fontWeight: 900, margin: "0 0 8px", letterSpacing: -1.5, lineHeight: 1.05 }}>
-              Session 12345
+              Session
             </h1>
             <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 16, fontWeight: 600, margin: 0 }}>
-              Live transcription · Started just now
+              {sessionActive ? "Active session" : "Session inactive"} · {transcriptSegments.length} segments
             </p>
           </div>
-
         </div>
 
         <div style={{ marginBottom: -2, marginLeft: -48, marginRight: -48 }}>
@@ -262,12 +397,10 @@ interface UserData {
         </div>
       </section>
 
-      {/* Main 3-column layout */}
-      <div className='flex flex-row gap-10 items-center justify-center'>
-
-        {/* Centre column — transcript */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="flex" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", padding: "40px 48px", display: "flex", gap: 28 }}>
+        
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#e91e8c", textTransform: "uppercase", letterSpacing: 0.5 }}>
               Transcription
             </h2>
@@ -279,24 +412,10 @@ interface UserData {
             )}
           </div>
 
-          <div className="w-[800px] flex" style={{
-            background: "white", border: `2px solid ${recording ? "#e91e8c" : "#f0d0e8"}`,
-            borderRadius: 20, padding: "24px",
-            minHeight: 340,
-            boxShadow: recording ? "0 4px 24px rgba(233,30,140,0.15)" : "0 4px 20px rgba(233,30,140,0.07)",
-            transition: "border-color 0.2s, box-shadow 0.2s",
-          }}>
-            <p style={{ color: "#cca0bb", fontSize: 15, lineHeight: 1.8, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
-              {recording
-                ? "Listening… Start speaking to see transcription appear here in real time."
-                : "Click the microphone button on the right to begin recording this session. Transcription will appear here automatically."}
-            </p>
-          </div>
+          <TranscriptBox recording={recording} segments={transcriptSegments} />
         </div>
 
-        {/* Right column — controls */}
-        <div className="mt-8" style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
-          {/* Doctor card */}
+        <div style={{ width: 200, display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
           <div style={{
             background: "linear-gradient(135deg, #fff0f6, #ffe0f0)",
             borderRadius: 20, padding: "20px 16px",
@@ -304,30 +423,19 @@ interface UserData {
             gap: 10, border: "2px solid #f0d0e8",
             boxShadow: "0 4px 20px rgba(233,30,140,0.1)", width: "100%",
           }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", overflow: "hidden", border: "3px solid white", boxShadow: "0 4px 16px rgba(233,30,140,0.2)" }}>
-              <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&h=200&auto=format&fit=crop" alt="Dr. X" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, #ff4d7d, #e91e8c)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(233,30,140,0.2)" }}>
+              <LucideMic size={28} color="white" />
             </div>
-            <span style={{ color: "#2d1a2e", fontSize: 14, fontWeight: 800 }}>Patient</span>
+            <span style={{ color: "#2d1a2e", fontSize: 14, fontWeight: 800 }}>{isClinician ? "Patient" : "Doctor"}</span>
             <RecordingPill recording={recording} />
           </div>
 
-          {/* Mic button */}
-          {!isDesktop && (
-            <div style={{
-              background: "white", borderRadius: 20, padding: "24px 16px",
-              border: "2px solid #f0d0e8", width: "100%",
-              boxShadow: "0 4px 20px rgba(233,30,140,0.07)",
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-            }}>
-              <MicButton recording={recording} onClick={() => setRecording(!recording)} size={80} />
-            </div>
-          )}
+          <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} size={80} />
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className='mt-10' style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+      <footer style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
         </div>
       </footer>

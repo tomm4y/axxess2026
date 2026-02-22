@@ -1,7 +1,7 @@
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript, getRoomsForUser } from "./db";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript, getRoomsForUser, isSessionActive, getRoomIdFromSession } from "./db";
 import { RoomId, SessionId, UserId } from "./types";
 import { SockMan, createSockManWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
@@ -199,6 +199,24 @@ app.post("/create_session", async (req, res) => {
   }
 
   res.json({ status: "invite_sent" });
+});
+
+app.get("/api/session/:sessionId/active", async (req, res) => {
+  const { sessionId } = req.params;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId parameter required" });
+    return;
+  }
+
+  try {
+    const active = await isSessionActive(SessionId.create(sessionId));
+    const roomId = await getRoomIdFromSession(SessionId.create(sessionId));
+    res.json({ active, roomId: roomId?.toString() || null });
+  } catch (error) {
+    console.error("Failed to check session active:", error);
+    res.status(500).json({ error: "Failed to check session status" });
+  }
 });
 
 const server = createServer(app);

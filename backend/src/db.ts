@@ -84,6 +84,23 @@ export async function getActiveSession(roomId: RoomId): Promise<SessionId | null
   return SessionId.create(result.rows[0].id);
 }
 
+export async function isSessionActive(sessionId: SessionId): Promise<boolean> {
+  const result = await pool.query(
+    "select active from sessions where id = $1",
+    [sessionId.toString()]
+  );
+  return result.rows[0]?.active === true;
+}
+
+export async function getRoomIdFromSession(sessionId: SessionId): Promise<RoomId | null> {
+  const result = await pool.query(
+    "select room from sessions where id = $1",
+    [sessionId.toString()]
+  );
+  if (!result.rows[0]) return null;
+  return RoomId.create(result.rows[0].room);
+}
+
 export async function endActiveSession(roomId: RoomId): Promise<void> {
   await pool.query(
     "update sessions set active = false where room = $1 and active = true",
@@ -102,18 +119,15 @@ export async function createSession(roomId: RoomId): Promise<SessionId> {
   return sessionId;
 }
 
-async function getRoomIdFromSession(sessionId: SessionId): Promise<RoomId> {
-  const result = await pool.query("select room from sessions where id = $1", [sessionId.toString()]);
-  return RoomId.create(result.rows[0].room);
-}
-
 export async function putSessionTranscript(sessionId: SessionId, content: string): Promise<void> {
   const roomId = await getRoomIdFromSession(sessionId);
+  if (!roomId) throw new Error("Session not found");
   await putTranscript(roomId.toString(), sessionId.toString(), content);
 }
 
 export async function getSessionTranscript(sessionId: SessionId): Promise<string> {
   const roomId = await getRoomIdFromSession(sessionId);
+  if (!roomId) throw new Error("Session not found");
   return await getTranscript(roomId.toString(), sessionId.toString());
 }
 

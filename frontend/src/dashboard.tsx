@@ -1,5 +1,5 @@
 
-import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideVideo } from 'lucide-react';
+import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideVideo, LucideUsers } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentUser, getUserById } from './lib/api';
@@ -183,6 +183,64 @@ const PersonRow: React.FC<{
   );
 };
 
+// ─── Session Invite Modal ───────────────────────────────────────────────────────
+
+interface SessionInviteModalProps {
+  creatorName: string;
+  onAccept: () => void;
+  onDecline: () => void;
+}
+
+const SessionInviteModal: React.FC<SessionInviteModalProps> = ({ creatorName, onAccept, onDecline }) => (
+  <div style={{
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 200, padding: 16, backdropFilter: "blur(4px)",
+  }}>
+    <div style={{
+      background: "white", borderRadius: 24, padding: "32px 28px",
+      maxWidth: 360, width: "100%", position: "relative",
+      boxShadow: "0 24px 80px rgba(233,30,140,0.2)",
+      fontFamily: "'Nunito', 'Poppins', sans-serif",
+    }}>
+      <div style={{
+        width: 64, height: 64, borderRadius: "50%",
+        background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        margin: "0 auto 20px",
+      }}>
+        <LucideUsers size={28} color="white" />
+      </div>
+
+      <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 900, color: "#E73A5B", textAlign: "center", letterSpacing: -0.5 }}>
+        Session Invite
+      </h2>
+      <p style={{ margin: "0 0 24px", fontSize: 14, fontWeight: 600, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
+        <strong style={{ color: "#2d1a2e" }}>{creatorName}</strong> is inviting you to join a session. Would you like to accept?
+      </p>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <button onClick={onDecline} style={{
+          flex: 1, background: "#f3f4f6", border: "none", borderRadius: 50,
+          padding: "14px 0", fontSize: 15, fontWeight: 700,
+          color: "#6b7280", cursor: "pointer", fontFamily: "'Nunito', sans-serif",
+        }}>
+          Decline
+        </button>
+        <button onClick={onAccept} style={{
+          flex: 1, background: "linear-gradient(to right, #ED385A, #E73A8A)",
+          color: "white", border: "none", borderRadius: 50,
+          padding: "14px 0", fontSize: 15, fontWeight: 700,
+          cursor: "pointer", fontFamily: "'Nunito', sans-serif",
+          boxShadow: "0 4px 14px rgba(233,30,140,0.3)",
+        }}>
+          Accept
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const Dashboard: React.FC = () => {
@@ -202,6 +260,9 @@ const Dashboard: React.FC = () => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteCreatorName, setInviteCreatorName] = useState('');
 
   const fetchRooms = async () => {
     const token = localStorage.getItem('access_token');
@@ -295,6 +356,36 @@ const Dashboard: React.FC = () => {
       eventSocket.ensureConnected().catch(console.error);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    const unsubscribe = eventSocket.registerOnInvite(async (event) => {
+      console.log('[Dashboard] Received session invite:', event);
+      const creatorData = await getUserById(event.creatorId);
+      setInviteCreatorName(creatorData?.name || 'Doctor');
+      setShowInviteModal(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleAcceptInvite = () => {
+    eventSocket.respondToInvite(true);
+    setShowInviteModal(false);
+    setInviteCreatorName('');
+  };
+
+  const handleDeclineInvite = () => {
+    eventSocket.respondToInvite(false);
+    setShowInviteModal(false);
+    setInviteCreatorName('');
+  };
+
+  useEffect(() => {
+    const unsubscribe = eventSocket.registerOnSessionStarted((event) => {
+      console.log('[Dashboard] Session started:', event);
+      navigate(`/transcript?session_id=${event.sessionId}`);
+    });
+    return unsubscribe;
+  }, [navigate]);
 
   useEffect(() => {
     const fetchUserAndData = async () => {
@@ -554,6 +645,14 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        {showInviteModal && (
+          <SessionInviteModal
+            creatorName={inviteCreatorName}
+            onAccept={handleAcceptInvite}
+            onDecline={handleDeclineInvite}
+          />
+        )}
       </div>
     );
   }
@@ -796,6 +895,14 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {showInviteModal && (
+        <SessionInviteModal
+          creatorName={inviteCreatorName}
+          onAccept={handleAcceptInvite}
+          onDecline={handleDeclineInvite}
+        />
       )}
     </div>
   );

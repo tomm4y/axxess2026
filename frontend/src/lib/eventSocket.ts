@@ -313,6 +313,12 @@ export class EventSocket {
       this.ws?.send(JSON.stringify({ type: 'stop', sessionId }))
     }).catch(console.error)
   }
+
+  sendAudio(audioData: Uint8Array | ArrayBuffer): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(audioData)
+    }
+  }
 }
 
 export const eventSocket = new EventSocket()
