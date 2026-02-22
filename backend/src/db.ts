@@ -131,6 +131,18 @@ export async function getSessionTranscriptData(sessionId: SessionId): Promise<Tr
   return await getSessionTranscript(roomId.toString(), sessionId.toString());
 }
 
+export async function userCanAccessSession(userId: UserId, sessionId: SessionId): Promise<{ roomId: string } | null> {
+  const result = await pool.query(
+    `select r.id as room_id
+     from sessions s
+     join rooms r on s.room = r.id
+     where s.id = $1 and (r.clinician = $2 or r.patient = $2)`,
+    [sessionId.toString(), userId.toString()]
+  );
+  if (!result.rows[0]) return null;
+  return { roomId: result.rows[0].room_id };
+}
+
 export async function getAllSessionsDebug(activeOnly?: boolean): Promise<object[]> {
   if (activeOnly) {
     const result = await pool.query("select * from sessions where active = true");

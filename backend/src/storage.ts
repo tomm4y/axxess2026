@@ -73,3 +73,10 @@ export async function getRecording(roomId: string, sessionId: string): Promise<B
   if (error) throw error;
   return data;
 }
+
+export async function createSignedAssetUrl(path: string, expiresInSeconds = 3600): Promise<string> {
+  const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(path, expiresInSeconds);
+  if (error) throw error;
+  if (!data?.signedUrl) throw new Error("Failed to create signed URL");
+  return data.signedUrl;
+}

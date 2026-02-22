@@ -1,12 +1,13 @@
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscriptData, getSessionTranscriptData, getRoomsForUser, isSessionActive, getRoomIdFromSession, getActiveSession, endSession, getSessionsForUser } from "./db";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscriptData, getSessionTranscriptData, getRoomsForUser, isSessionActive, getRoomIdFromSession, getActiveSession, endSession, getSessionsForUser, userCanAccessSession } from "./db";
 import { RoomId, SessionId, UserId } from "./types";
 import { SockMan, createSockManWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
 import "dotenv/config";
 import { diagnosticAgent } from "./agent";
+import { createSignedAssetUrl } from "./storage";
 
 const app = express();
 const port = 3000;
@@ -320,6 +321,87 @@ app.get("/api/session/:sessionId/transcript", async (req, res) => {
     } else {
       res.status(500).json({ error: "Failed to fetch transcript" });
     }
+  }
+});
+
+app.get("/api/session/:sessionId/details", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const { sessionId } = req.params;
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId parameter required" });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    const userId = payload.sub;
+    if (!userId) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+
+    const sessionIdObj = SessionId.create(sessionId);
+    const userIdObj = UserId.create(userId);
+    const access = await userCanAccessSession(userIdObj, sessionIdObj);
+    if (!access) {
+      const roomIdMaybe = await getRoomIdFromSession(sessionIdObj);
+      if (!roomIdMaybe) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+      res.status(403).json({ error: "Forbidden: you do not have access to this session" });
+      return;
+    }
+
+    const roomId = access.roomId;
+
+    let transcriptData: any = null;
+    try {
+      transcriptData = await getSessionTranscriptData(sessionIdObj);
+    } catch (e) {
+      transcriptData = null;
+    }
+
+    let recordingUrl: string | null = null;
+    try {
+      const recordingPath = `room-${roomId}/session-${sessionId}/recording-full.wav`;
+      recordingUrl = await createSignedAssetUrl(recordingPath, 60 * 60);
+    } catch {
+      recordingUrl = null;
+    }
+
+    let audioFragments: Array<{ id: string; startMs: number; endMs: number; filename: string; url: string | null }> = [];
+    if (transcriptData?.audioFragments?.length) {
+      audioFragments = await Promise.all(
+        transcriptData.audioFragments.map(async (frag: any) => {
+          const fragmentPath = `room-${roomId}/session-${sessionId}/${frag.filename}`;
+          try {
+            const url = await createSignedAssetUrl(fragmentPath, 60 * 60);
+            return { ...frag, url };
+          } catch {
+            return { ...frag, url: null };
+          }
+        })
+      );
+    }
+
+    res.json({
+      roomId,
+      sessionId,
+      transcriptData,
+      recordingUrl,
+      audioFragments,
+    });
+  } catch (error) {
+    console.error("Failed to fetch session details:", error);
+    res.status(500).json({ error: "Failed to fetch session details" });
   }
 });
 

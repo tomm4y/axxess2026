@@ -1,25 +1,36 @@
-// simpleTest.ts
+// testAgent.ts — usage: npx tsx src/testAgent.ts <roomId> <sessionId>
 import { diagnosticAgent } from "./agent";
+import { getSessionTranscript } from "./storage";
 
-// Simulates what your Speech-to-Text engine would output
-const mockTranscript = `
-  Doctor: Good morning, what seems to be the problem today?
-  Patient: I've been having chest pain for about two days now. 
-  It gets worse when I breathe deeply. Also a mild fever, maybe 100.4.
-  Doctor: On a scale of 1 to 10, how bad is the pain?
-  Patient: About a 6. It's sharp, on the right side.
-`;
+const [roomId, sessionId] = process.argv.slice(2);
+
+if (!roomId || !sessionId) {
+  console.error("Usage: npx tsx src/testAgent.ts <roomId> <sessionId>");
+  process.exit(1);
+}
 
 async function main() {
-  console.log(" Mock transcript received from STT engine...\n");
-  console.log("  Running diagnostic agent...\n");
+  console.log(`Fetching transcript for room ${roomId}, session ${sessionId}...\n`);
 
-  const result = await diagnosticAgent(mockTranscript);
+  const transcriptData = await getSessionTranscript(roomId, sessionId);
+
+  // Convert segments into a readable conversation string
+  const conversation = transcriptData.segments
+    .map((seg) => {
+      const speaker = seg.role ?? "Unknown";
+      return `${speaker}: ${seg.text}`;
+    })
+    .join("\n");
+
+  console.log("Transcript:\n", conversation, "\n");
+  console.log("Running diagnostic agent...\n");
+
+  const result = await diagnosticAgent(conversation);
 
   console.log("Done!\n");
-  console.log(" Extraction:", JSON.stringify(result.extraction, null, 2));
-  console.log(" ICD Code:  ", JSON.stringify(result.icd, null, 2));
-  console.log(" Summary:\n ", result.summary);
+  console.log("Extraction:", JSON.stringify(result.extraction, null, 2));
+  console.log("ICD Code:  ", JSON.stringify(result.icd, null, 2));
+  console.log("Summary:\n ", result.summary);
 }
 
 main().catch(console.error);
