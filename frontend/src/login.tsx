@@ -2,6 +2,7 @@ import { LucideArrowLeft } from "lucide-react";
 import { useState, useEffect, type CSSProperties, type MouseEvent, type ChangeEvent } from "react";
 import { useNavigate, Link } from "react-router";
 import { login } from "./lib/api";
+import { useAuth } from "./lib/AuthContext";
 import { eventSocket } from "./lib/eventSocket";
 
 // ─── Shared Components ────────────────────────────────────────────────────────
@@ -315,6 +316,7 @@ const HealthSafeLogin: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const navigate = useNavigate();
+  const auth = useAuth();
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
@@ -329,6 +331,8 @@ const HealthSafeLogin: React.FC = () => {
     setLoading(true);
     try {
       const response = await login(email, password);
+      
+      await auth.refresh();
       
       await eventSocket.open(response.user.id);
       

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router";
-import { logout } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 
 type NavItem = {
   id: string;
@@ -65,6 +65,7 @@ export default function HealthSafeNavbar({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -88,8 +89,8 @@ export default function HealthSafeNavbar({
 
   const handleSignOut = async () => {
     try {
-      await logout();
-      navigate("/");
+      await signOut();
+      navigate("/login");
     } catch (err) {
       console.error("Sign out failed:", err);
     }
