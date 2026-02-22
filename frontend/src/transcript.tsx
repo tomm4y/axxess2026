@@ -42,7 +42,6 @@ const RecordingPill: React.FC<{ recording: boolean }> = ({ recording }) => (
 
 const MicButton: React.FC<{ recording: boolean; onClick: () => void; disabled?: boolean; size?: number }> = ({ recording, onClick, disabled, size = 72 }) => {
   const handleClick = () => {
-    console.log('[MicButton] Clicked, disabled:', disabled, 'recording:', recording);
     if (!disabled) {
       onClick();
     }
@@ -90,7 +89,7 @@ const TranscriptBox: React.FC<{ recording: boolean; segments: { text: string; ro
   }}>
     {segments.length === 0 ? (
       <p style={{ color: "#cca0bb", fontSize: 14, lineHeight: 1.7, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
-        {recording ? "Listening…" : "Tap the microphone to start recording your session."}
+        {recording ? "Listening…" : "Waiting for recording to start..."}
       </p>
     ) : (
       <div style={{ maxHeight: 300, overflowY: "auto" }}>
@@ -127,8 +126,6 @@ const Transcript: React.FC = () => {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
   
-  console.log('[Transcript] Component mounted, sessionId:', sessionId);
-  
   const [recording, setRecording] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
@@ -137,7 +134,6 @@ const Transcript: React.FC = () => {
   const [transcriptSegments, setTranscriptSegments] = useState<{ text: string; role: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -162,23 +158,16 @@ const Transcript: React.FC = () => {
 
   useEffect(() => {
     const checkSessionActive = async () => {
-      if (!sessionId) {
-        console.log('[Transcript] No sessionId, skipping active check');
-        return;
-      }
+      if (!sessionId) return;
       
       try {
-        console.log('[Transcript] Checking session active status...');
         const response = await fetch(`/api/session/${sessionId}/active`);
         if (response.ok) {
           const data = await response.json();
-          console.log('[Transcript] Session active status:', data);
           setSessionActive(data.active);
-        } else {
-          console.log('[Transcript] Failed to check session status:', response.status);
         }
       } catch (error) {
-        console.error('[Transcript] Failed to check session status:', error);
+        console.error('Failed to check session status:', error);
       }
     };
     
@@ -200,9 +189,27 @@ const Transcript: React.FC = () => {
       console.log('[Transcript] Deepgram ready');
     });
     
+    const unsubRecordingStarted = eventSocket.register((event) => {
+      if (event.type === 'recording_started') {
+        console.log('[Transcript] Recording started event received');
+        setRecording(true);
+      }
+      return () => {};
+    });
+    
+    const unsubRecordingStopped = eventSocket.register((event) => {
+      if (event.type === 'recording_stopped') {
+        console.log('[Transcript] Recording stopped event received');
+        setRecording(false);
+      }
+      return () => {};
+    });
+    
     return () => {
       unsubTranscript();
       unsubReady();
+      unsubRecordingStarted();
+      unsubRecordingStopped();
     };
   }, [sessionId]);
 
@@ -214,22 +221,14 @@ const Transcript: React.FC = () => {
   }, []);
 
   const startRecording = async () => {
-    console.log('[Transcript] startRecording called', { sessionId, sessionActive });
-    if (!sessionId || !sessionActive) {
-      console.log('[Transcript] Cannot start: missing sessionId or session not active');
-      return;
-    }
+    if (!sessionId || !sessionActive) return;
     
     try {
-      console.log('[Transcript] Ensuring socket connected...');
       await eventSocket.ensureConnected();
-      console.log('[Transcript] Socket connected, starting transcription...');
       eventSocket.startTranscription(sessionId);
       
-      console.log('[Transcript] Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      console.log('[Transcript] Microphone access granted');
       
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
@@ -251,10 +250,9 @@ const Transcript: React.FC = () => {
       source.connect(processor);
       processor.connect(audioContext.destination);
       
-      console.log('[Transcript] Recording started');
       setRecording(true);
     } catch (error) {
-      console.error('[Transcript] Failed to start recording:', error);
+      console.error('Failed to start recording:', error);
       alert('Failed to start recording. Please check microphone permissions.');
     }
   };
@@ -279,7 +277,6 @@ const Transcript: React.FC = () => {
   };
 
   const toggleRecording = () => {
-    console.log('[Transcript] toggleRecording called, current recording:', recording);
     if (recording) {
       stopRecording();
     } else {
@@ -306,14 +303,14 @@ const Transcript: React.FC = () => {
         <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
         {sharedStyles}
 
-        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", width: "100%" }}>
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", width: "100%", paddingBottom: isClinician ? 0 : 120 }}>
 
           <div style={{
             background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
             paddingTop: 52, paddingBottom: 0, paddingLeft: 24, paddingRight: 24,
             position: "relative", overflow: "visible",
           }}>
-            <Link to="/dashboard" className="absolute top-5 left-5">
+            <Link to="/dashboard" style={{ position: "absolute", top: 20, left: 20 }}>
               <LucideArrowLeft color="white" size={28} />
             </Link>
             <div style={{ display: "flex", alignItems: "center", marginBlock: 10 }}>
@@ -356,13 +353,24 @@ const Transcript: React.FC = () => {
               </h2>
               <TranscriptBox recording={recording} segments={transcriptSegments} />
             </div>
-
-            <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} />
-            
-            <div style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
-              sessionId: {sessionId || 'none'} | sessionActive: {sessionActive.toString()} | recording: {recording.toString()}
-            </div>
           </div>
+
+          {/* Pinned record button for patients only */}
+          {!isClinician && (
+            <div style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: "linear-gradient(to top, white 80%, transparent)",
+              padding: "24px 16px 16px",
+              display: "flex",
+              justifyContent: "center",
+              zIndex: 100,
+            }}>
+              <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} />
+            </div>
+          )}
 
         </div>
       </div>
@@ -370,7 +378,7 @@ const Transcript: React.FC = () => {
   }
 
   return (
-    <div className='mt-10' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
+    <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
       {sharedStyles}
 
@@ -430,7 +438,10 @@ const Transcript: React.FC = () => {
             <RecordingPill recording={recording} />
           </div>
 
-          <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} size={80} />
+          {/* Only show record button for patients on desktop */}
+          {!isClinician && (
+            <MicButton recording={recording} onClick={toggleRecording} disabled={!sessionActive} size={80} />
+          )}
         </div>
       </div>
 

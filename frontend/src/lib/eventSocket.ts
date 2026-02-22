@@ -260,6 +260,12 @@ export class EventSocket {
     return () => handlers.delete(handler)
   }
 
+  register(handler: (event: any) => void): Unsubscribe {
+    const wrappedHandler = (event: unknown) => handler(event)
+    Object.values(this.handlers).forEach(set => set.add(wrappedHandler))
+    return () => Object.values(this.handlers).forEach(set => set.delete(wrappedHandler))
+  }
+
   registerOnInvite(handler: Handler<SessionInviteEvent>): Unsubscribe {
     return this.register('session_invite', handler as Handler<unknown>)
   }

@@ -77,6 +77,7 @@ type SessionSockets = {
   patient: WebSocket;
   clinicianUserId: string;
   patientUserId: string;
+  roomId: string;
   onClinicianClose?: () => void;
   onPatientClose?: () => void;
 };
@@ -131,6 +132,7 @@ export class SockMan {
       patient: patientWs,
       clinicianUserId,
       patientUserId,
+      roomId,
     };
     
     this.assignedSockets.set(key, sessionSockets);
@@ -403,7 +405,7 @@ export class SockMan {
         firstSpeakerSeen: null,
         clinicianUserId: sockets.clinicianUserId,
         patientUserId: sockets.patientUserId,
-        roomId: "",
+        roomId: sockets.roomId,
         audioChunks: [],
         recording: false,
       };
@@ -413,6 +415,7 @@ export class SockMan {
 
     rt.recording = true;
     rt.audioChunks = [];
+    rt.roomId = sockets.roomId;
 
     const deepgram = this.connectDeepgramLive((event) => {
       const sessionRt = this.sessionRuntimes.get(key);
