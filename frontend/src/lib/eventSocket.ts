@@ -82,13 +82,24 @@ type Handler<T> = (event: T) => void
 
 export class EventSocket {
   private ws: WebSocket | null = null
-  private userId: string | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
   private maxReconnectAttempts = 10
   private isIntentionalClose = false
   private pendingReconnect = false
+
+  private getUserId(): string | null {
+    return localStorage.getItem('user_id')
+  }
+
+  private setUserId(userId: string | null): void {
+    if (userId) {
+      localStorage.setItem('user_id', userId)
+    } else {
+      localStorage.removeItem('user_id')
+    }
+  }
 
   private handlers = {
     session_invite: new Set<Handler<SessionInviteEvent>>(),
@@ -133,7 +144,7 @@ export class EventSocket {
         return
       }
 
-      this.userId = userId
+      this.setUserId(userId)
       this.isIntentionalClose = false
       this.pendingReconnect = false
       const url = `${this.getWsUrl()}?userId=${encodeURIComponent(userId)}`
@@ -188,7 +199,8 @@ export class EventSocket {
   }
 
   private scheduleReconnect() {
-    if (!this.userId || this.reconnectAttempts >= this.maxReconnectAttempts || this.pendingReconnect) {
+    const userId = this.getUserId()
+    if (!userId || this.reconnectAttempts >= this.maxReconnectAttempts || this.pendingReconnect) {
       return
     }
 
@@ -200,8 +212,9 @@ export class EventSocket {
 
     this.reconnectTimer = setTimeout(() => {
       this.pendingReconnect = false
-      if (this.userId && !this.isIntentionalClose) {
-        this.open(this.userId).catch((err) => {
+      const userId = this.getUserId()
+      if (userId && !this.isIntentionalClose) {
+        this.open(userId).catch((err) => {
           console.error('[EventSocket] Reconnect failed:', err)
         })
       }
@@ -219,7 +232,7 @@ export class EventSocket {
       this.ws.close(1000, 'Client disconnecting')
       this.ws = null
     }
-    this.userId = null
+    this.setUserId(null)
     this.reconnectAttempts = this.maxReconnectAttempts
   }
 
@@ -231,8 +244,9 @@ export class EventSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       return Promise.resolve()
     }
-    if (this.userId) {
-      return this.open(this.userId)
+    const userId = this.getUserId()
+    if (userId) {
+      return this.open(userId)
     }
     return Promise.reject(new Error('No userId set'))
   }
