@@ -245,9 +245,7 @@ interface UserData {
         <div style={{ position: "absolute", top: 20, right: -40, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.05)", pointerEvents: "none" }} />
 
         <div className="flex flex-col" style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", paddingBottom: 40 }}>
-          <Link to="">
-            <img src='/Logo.svg' className='w-54 mb-10'/>
-          </Link>
+
           <div>
             <h1 style={{ color: "white", fontSize: 38, fontWeight: 900, margin: "0 0 8px", letterSpacing: -1.5, lineHeight: 1.05 }}>
               Session 12345
