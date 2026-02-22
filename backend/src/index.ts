@@ -6,6 +6,7 @@ import { RoomId, SessionId } from "./types";
 import { S2TService, createS2TWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
 import "dotenv/config";
+import { diagnosticAgent } from "./agent";
 
 const app = express();
 const port = 3000;
@@ -116,6 +117,13 @@ app.post("/debug/transcript_maker", async (req, res) => {
   try {
     const sessionId = SessionId.create(session_id);
     await putSessionTranscript(sessionId, content);
+    // Run diagnostic agent
+    const aiResult = await diagnosticAgent(content);
+
+    console.log("AI Extraction:", aiResult.extraction);
+    console.log("AI ICD:", aiResult.icd);
+    console.log("AI Summary:", aiResult.summary);
+
     res.send(`<script>alert("Transcript created successfully!"); window.location.href = "/debug/transcript_maker";</script>`);
   } catch (error) {
     res.send(`<script>alert("Error: ${error}"); window.location.href = "/debug/transcript_maker";</script>`);
