@@ -142,3 +142,11 @@ export async function getAllRoomsDebug(): Promise<object[]> {
   const result = await pool.query("select * from rooms");
   return result.rows;
 }
+
+export async function getRoomsForUser(userId: UserId): Promise<object[]> {
+  const result = await pool.query(
+    "select * from rooms where clinician = $1 or patient = $1",
+    [userId.toString()]
+  );
+  return result.rows;
+}

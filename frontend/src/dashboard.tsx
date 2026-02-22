@@ -1,8 +1,10 @@
-import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideUsers, LucideActivity, LucideCalendar } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router';
+
+import { LucideQrCode, LucideUser, LucideX } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router';
 import { getCurrentUser } from './lib/api';
 import QRCode from 'qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface Person {
   id: string;
@@ -152,16 +154,38 @@ const PersonRow: React.FC<{ person: Person; onClick: () => void }> = ({ person, 
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-
   const [user, setUser] = useState<UserData | null>(null);
   const [isClinician, setIsClinician] = useState(false);
-  const [persons, _setPersons] = useState<Person[]>([]);
+  
+  const [persons, setPersons] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
+  
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrCodeData, setQrCodeData] = useState<string>('');
   const [qrLoading, setQrLoading] = useState(false);
+  
+  const [showScannerModal, setShowScannerModal] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+
+  const fetchRooms = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    
+    try {
+      const response = await fetch(`/api/rooms`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPersons(data.rooms || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch rooms:', error);
+    }
+  };
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -177,6 +201,7 @@ const Dashboard: React.FC = () => {
         if (response?.user) {
           setUser(response.user);
           setIsClinician(response.user.is_clinician);
+          await fetchRooms();
         }
       } catch (error) {
         console.error('Failed to fetch user:', error);
@@ -187,10 +212,94 @@ const Dashboard: React.FC = () => {
     fetchUserAndData();
   }, []);
 
-  const handleScanQRCode = () => {
+  useEffect(() => {
+    if (!showScannerModal || !scanning) return;
+
+    const initScanner = async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        scannerRef.current = new Html5Qrcode('qr-reader');
+        await scannerRef.current.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          onScanSuccess,
+          () => {}
+        );
+      } catch (error) {
+        console.error('Failed to start scanner:', error);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        setShowScannerModal(false);
+        setScanning(false);
+        alert('Failed to start scanner.');
+      }
+    };
+
+    initScanner();
+  }, [showScannerModal, scanning]);
+
+  const startScanner = async () => {
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    } catch (error) {
+      console.error('Camera permission denied:', error);
+      alert('Camera permission denied. Please allow camera access to scan QR codes.');
+      return;
+    }
+
+    setShowScannerModal(true);
     setScanning(true);
-    alert('QR Scanner will be integrated here.');
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current = null;
+      } catch (error) {
+        console.error('Failed to stop scanner:', error);
+      }
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setShowScannerModal(false);
     setScanning(false);
+  };
+
+  const onScanSuccess = async (clinicianId: string) => {
+    await stopScanner();
+    
+    if (!user?.id) {
+      alert('User not loaded');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`/create_room?patient=${user.id}&clinician=${clinicianId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        await fetchRooms();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create room');
+      }
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      alert('Failed to create room');
+    }
+  };
+
+  const handleScanQRCode = () => {
+    startScanner();
   };
 
   const handleShowQRCode = async () => {
@@ -480,6 +589,7 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
 
+
           {/* Account card */}
           {user && (
             <div style={{
@@ -538,6 +648,36 @@ const Dashboard: React.FC = () => {
       </footer>
 
       {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
+      
+      {/* QR Scanner Modal (for patients) */}
+      {showScannerModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full relative">
+            <button
+              onClick={stopScanner}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <LucideX size={24} />
+            </button>
+            
+            <h2 className="text-[#E73A5B] text-xl font-sf-semibold mb-2 text-center">
+              Scan Doctor's QR Code
+            </h2>
+            <p className="text-gray-500 text-sm mb-6 text-center">
+              Point your camera at the doctor's QR code to connect
+            </p>
+            
+            <div id="qr-reader" className="w-full mb-6" />
+            
+            <button
+              onClick={stopScanner}
+              className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-3 font-sf-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

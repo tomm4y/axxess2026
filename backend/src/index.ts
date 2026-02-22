@@ -1,8 +1,8 @@
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript } from "./db";
-import { RoomId, SessionId } from "./types";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript, getOrCreateRoom, getRoomsForUser } from "./db";
+import { RoomId, SessionId, UserId } from "./types";
 import { S2TService, createS2TWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
 import "dotenv/config";
@@ -44,6 +44,55 @@ const s2tService = new S2TService(
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
+});
+
+app.post("/create_room", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+  const { patient, clinician } = req.query;
+
+  if (!patient || !clinician || typeof patient !== "string" || typeof clinician !== "string") {
+    res.status(400).json({ error: "patient and clinician query parameters required" });
+    return;
+  }
+
+  try {
+    const roomId = await getOrCreateRoom(UserId.create(clinician), UserId.create(patient));
+    res.json({ roomId: roomId.toString() });
+  } catch (error) {
+    console.error("Failed to create room:", error);
+    res.status(500).json({ error: "Failed to create room" });
+  }
+});
+
+app.get("/api/rooms", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const userId = payload.sub;
+    if (!userId) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+
+    const rooms = await getRoomsForUser(UserId.create(userId));
+    res.json({ rooms });
+  } catch (error) {
+    console.error("Failed to get rooms:", error);
+    res.status(500).json({ error: "Failed to get rooms" });
+  }
 });
 
 app.get("/debug/user", async (req, res) => {
