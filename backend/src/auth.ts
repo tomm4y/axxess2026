@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getSupabaseAdmin } from './supabase'
-import { pool } from './db'
+import { pool, createUser, getUserData } from './db'
+import { UserId } from './types'
 
 const router = Router()
 
@@ -33,10 +34,7 @@ router.post('/signup', async (req, res) => {
     }
 
     // Insert into users table
-    await pool.query(
-      'INSERT INTO users (id, email, name, is_clinician) VALUES ($1, $2, $3, $4)',
-      [authData.user.id, email, name, is_clinician ?? false]
-    )
+    await createUser(email, name, is_clinician ?? false)
 
     res.json({
       message: 'Account created successfully',
@@ -73,12 +71,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Get user data from users table
-    const userResult = await pool.query(
-      'SELECT id, email, name, is_clinician FROM users WHERE id = $1',
-      [data.user.id]
-    )
-
-    const userData = userResult.rows[0]
+    const userData = getUserData(UserId.create(data.user.id))
 
     res.json({
       message: 'Login successful',
