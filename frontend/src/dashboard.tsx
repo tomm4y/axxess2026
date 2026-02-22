@@ -327,8 +327,7 @@ const Dashboard: React.FC = () => {
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
         {/* Decorative Background Blobs */}
-        <img src='/Circle.svg' className='w-50 h-50 absolute -right-20 top-20 translate-y-1/2 pointer-events-none' />
-        <img src='/Circle.svg' className='w-60 h-60 absolute -left-25 bottom-0 pointer-events-none' />
+
 
         {/* Header */}
         <header className="fixed top-0 w-full max-w-md bg-gradient-to-r flex py-4 items-end to-[#E73A8A] from-[#ED385A] px-4 z-20">
