@@ -41,6 +41,14 @@ export async function createClinicianUser(email: string, name: string): Promise<
   return UserId.create(result.rows[0].id);
 }
 
+export async function createUser(email: string, name: string, is_clinician: boolean): Promise<UserId> {
+  const result = await pool.query(
+    "insert into users (email, name, is_clinician) values ($1, $2, $3) returning id",
+    [email, name, is_clinician]
+  );
+  return UserId.create(result.rows[0].id);
+}
+
 export async function getOrCreateRoom(clinician: UserId, patient: UserId): Promise<RoomId> {
   const clinicianStr = clinician.toString();
   const patientStr = patient.toString();
