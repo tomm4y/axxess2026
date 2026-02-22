@@ -2,6 +2,7 @@ import { LucideArrowLeft } from "lucide-react";
 import { useState, useEffect, type CSSProperties, type MouseEvent, type ChangeEvent } from "react";
 import { useNavigate, Link } from "react-router";
 import { login } from "./lib/api";
+import { eventSocket } from "./lib/eventSocket";
 
 // ─── Shared Components ────────────────────────────────────────────────────────
 
@@ -327,7 +328,20 @@ const HealthSafeLogin: React.FC = () => {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
+      const response = await login(email, password);
+      
+      await eventSocket.open(response.user.id);
+      
+      eventSocket.registerOnConnected((e) => console.log('[WIP] connected:', e));
+      eventSocket.registerOnInvite((e) => console.log('[WIP] session_invite:', e));
+      eventSocket.registerOnRoomCreated((e) => console.log('[WIP] room_created:', e));
+      eventSocket.registerOnSessionStarted((e) => console.log('[WIP] session_started:', e));
+      eventSocket.registerOnTranscript((e) => console.log('[WIP] transcript:', e));
+      eventSocket.registerOnUtterance((e) => console.log('[WIP] utterance:', e));
+      eventSocket.registerOnError((e) => console.log('[WIP] error:', e));
+      eventSocket.registerOnStopped((e) => console.log('[WIP] stopped:', e));
+      eventSocket.registerOnReady((e) => console.log('[WIP] ready:', e));
+      
       navigate("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

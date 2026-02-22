@@ -102,9 +102,7 @@ export class EventSocket {
 
   private getWsUrl(): string {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname
-    const port = 3000
-    return `${protocol}//${host}:${port}/ws`
+    return `${protocol}//${window.location.host}/ws`
   }
 
   open(userId: string): Promise<void> {
