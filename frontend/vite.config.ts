@@ -8,15 +8,15 @@ export default defineConfig({
             tailwindcss()
   ],
   server: {
-    allowedHosts: ['.trycloudflare.com'],   
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3000", // your backend port
+        target: "http://localhost:3000/", // your backend port
         changeOrigin: true,
         secure: false,
       },
       "/auth": {
-        target: "http://127.0.0.1:3000", // your backend port
+        target: "http://localhost:3000/", // your backend port
         changeOrigin: true,
         secure: false,
       },

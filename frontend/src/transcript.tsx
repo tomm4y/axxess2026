@@ -1,12 +1,9 @@
 import { LucideAArrowDown, LucideMic } from 'lucide-react';
 import React from 'react';
 
-// Define props here if you plan to pass data later (e.g., sessionId, doctorName)
-interface TranscriptProps {
-  // Example: sessionId?: string;
-}
 
-const Transcript: React.FC<TranscriptProps> = () => {
+
+const Transcript: React.FC = () => {
   return (
     // Mobile container simulation
     <div className="max-w-md w-full mx-auto bg-white relative overflow-hidden flex flex-col font-sans sm:rounded-3xl">
