@@ -6,6 +6,7 @@ import HealthSafeLogin from './login.tsx'
 import HealthSafeSignUp from './signup.tsx'
 import Transcript from './transcript.tsx'
 import Dashboard from './dashboard.tsx'
+import AllSessions from './allSessions.tsx'
 import HealthSafeNavbar from './components/HealthSafeNavbar.tsx'
 import { ProtectedRoute, PublicRoute } from './components/RouteGuards.tsx'
 import AuthProvider from './lib/AuthContext.tsx'
@@ -48,6 +49,7 @@ createRoot(document.getElementById('root')!).render(
             <Route element={<NavbarLayout />}>
               <Route path="/transcript" element={<Transcript />}/>
               <Route path="/dashboard" element={<Dashboard />}/>
+              <Route path="/sessions" element={<AllSessions />}/>
             </Route>
           </Route>
         </Routes>

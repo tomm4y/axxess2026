@@ -96,6 +96,11 @@ export default function HealthSafeNavbar({
     }
   };
 
+  const TAB_ROUTES: Record<string, string> = {
+    "current-room": "/dashboard",
+    "all-sessions": "/sessions",
+  };
+
   const handleSelect = (id: string) => {
     if (id === "settings") {
       setSettingsOpen((prev) => !prev);
@@ -104,6 +109,9 @@ export default function HealthSafeNavbar({
     setSettingsOpen(false);
     setActive(id);
     onTabChange?.(id);
+    if (TAB_ROUTES[id]) {
+      navigate(TAB_ROUTES[id]);
+    }
   };
 
   // ── DESKTOP TOP NAVBAR ──────────────────────────────────────────
