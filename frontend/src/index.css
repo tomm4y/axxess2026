@@ -1,18 +1,22 @@
 @import "tailwindcss";
 
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+html {
+  overflow-x: hidden;
+}
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+@font-face {
+  font-family: SF-Pro-Display-Regular;
+  src: url("../src/assets/fonts/SF-Pro-Display-Regular.otf");
+}
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@font-face {
+  font-family: SF-Pro-Display-Semibold;
+  src: url("../src/assets/fonts/SF-Pro-Display-Semibold.otf");
+}
+
+@theme {
+  --font-sf-regular: SF-Pro-Display-Regular, 'sans-serif';
+  --font-sf-semibold: SF-Pro-Display-Semibold, 'sans-serif';
 }
 
 a {
@@ -30,11 +34,7 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  overflow-x: hidden;
 }
 
 button {
