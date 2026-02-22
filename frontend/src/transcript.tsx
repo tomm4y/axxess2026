@@ -43,7 +43,29 @@ const RecordingPill: React.FC<{ recording: boolean }> = ({ recording }) => (
   </div>
 );
 
-
+const MicButton: React.FC<{ recording: boolean; onClick: () => void; size?: number }> = ({ recording, onClick, size = 72 }) => (
+  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+    <button
+      onClick={onClick}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        background: recording ? "linear-gradient(135deg, #ff4d7d, #e91e8c)" : "white",
+        border: `3px solid ${recording ? "transparent" : "#f0d0e8"}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer",
+        boxShadow: recording ? "0 8px 28px rgba(233,30,140,0.45)" : "0 4px 16px rgba(233,30,140,0.12)",
+        transition: "all 0.25s ease",
+      } as React.CSSProperties}
+    >
+      <LucideMic color={recording ? "white" : "#e91e8c"} size={Math.round(size * 0.39)} />
+    </button>
+    <span style={{ fontSize: 12, fontWeight: 700, color: "#cca0bb", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      {recording ? "Click to stop" : "Click to record"}
+    </span>
+  </div>
+);
 
 const TranscriptBox: React.FC<{ recording: boolean; fullHeight?: boolean }> = ({ recording, fullHeight }) => (
   <div style={{
@@ -197,14 +219,10 @@ interface UserData {
               <TranscriptBox recording={recording} />
             </div>
 
+            {/* Mic */}
+            <MicButton recording={recording} onClick={() => setRecording(!recording)} />
           </div>
 
-          {/* Footer wave */}
-          <div style={{ position: "relative", height: 60, background: "linear-gradient(160deg, #ff4d7d 0%, #e91e8c 100%)", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-              <WaveDivider color="white" flip={true} />
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -213,7 +231,7 @@ interface UserData {
   // ── Desktop ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className='mt-10'  style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
+    <div className='mt-10' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
       {sharedStyles}
 
@@ -273,7 +291,7 @@ interface UserData {
             <p style={{ color: "#cca0bb", fontSize: 15, lineHeight: 1.8, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
               {recording
                 ? "Listening… Start speaking to see transcription appear here in real time."
-                : "Wait for the patient to start recording."}
+                : "Click the microphone button on the right to begin recording this session. Transcription will appear here automatically."}
             </p>
           </div>
         </div>
@@ -295,7 +313,17 @@ interface UserData {
             <RecordingPill recording={recording} />
           </div>
 
-
+          {/* Mic button */}
+          {!isDesktop && (
+            <div style={{
+              background: "white", borderRadius: 20, padding: "24px 16px",
+              border: "2px solid #f0d0e8", width: "100%",
+              boxShadow: "0 4px 20px rgba(233,30,140,0.07)",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+            }}>
+              <MicButton recording={recording} onClick={() => setRecording(!recording)} size={80} />
+            </div>
+          )}
         </div>
       </div>
 
