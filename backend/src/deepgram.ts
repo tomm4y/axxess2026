@@ -2,7 +2,7 @@ import type { Server as HttpServer } from "http";
 import WebSocket, { WebSocketServer } from "ws";
 import { UserId, RoomId, SessionId } from "./types";
 import { getOrCreateRoom, getRoomById, createSession, endSession } from "./db";
-import { putRecording } from "./storage";
+import { putRecording, putSessionTranscript, type TranscriptData, type TranscriptSegment as StorageTranscriptSegment } from "./storage";
 
 export type Role = "Doctor" | "Patient";
 
@@ -47,6 +47,13 @@ export type Logger = {
 
 type DeepgramConn = ReturnType<SockMan["connectDeepgramLive"]>;
 
+type AudioFragment = {
+  id: string;
+  startMs: number;
+  endMs: number;
+  chunks: Buffer[];
+};
+
 type SessionRuntime = {
   deepgram: DeepgramConn | null;
   clients: Set<WebSocket>;
@@ -58,6 +65,9 @@ type SessionRuntime = {
   roomId: string;
   audioChunks: Buffer[];
   recording: boolean;
+  recordingStartTime: number;
+  audioFragments: AudioFragment[];
+  currentFragmentId: number;
 };
 
 type PendingSessionInvite = {
@@ -346,6 +356,9 @@ export class SockMan {
         roomId: "",
         audioChunks: [],
         recording: false,
+        recordingStartTime: 0,
+        audioFragments: [],
+        currentFragmentId: 0,
       };
       this.sessionRuntimes.set(key, rt);
     }
@@ -408,6 +421,9 @@ export class SockMan {
         roomId: sockets.roomId,
         audioChunks: [],
         recording: false,
+        recordingStartTime: 0,
+        audioFragments: [],
+        currentFragmentId: 0,
       };
       this.sessionRuntimes.set(key, rt);
     }
@@ -415,6 +431,9 @@ export class SockMan {
 
     rt.recording = true;
     rt.audioChunks = [];
+    rt.recordingStartTime = Date.now();
+    rt.audioFragments = [];
+    rt.currentFragmentId = 0;
     rt.roomId = sockets.roomId;
 
     const deepgram = this.connectDeepgramLive((event) => {
@@ -467,7 +486,24 @@ export class SockMan {
     rt.deepgram.ws.send(audio);
     
     if (rt.recording && Buffer.isBuffer(audio)) {
+      const now = Date.now();
+      const relativeMs = now - rt.recordingStartTime;
+      
       rt.audioChunks.push(audio);
+      
+      if (rt.audioFragments.length === 0) {
+        rt.currentFragmentId++;
+        rt.audioFragments.push({
+          id: String(rt.currentFragmentId),
+          startMs: relativeMs,
+          endMs: relativeMs,
+          chunks: [audio],
+        });
+      } else {
+        const current = rt.audioFragments[rt.audioFragments.length - 1];
+        current.chunks.push(audio);
+        current.endMs = relativeMs;
+      }
     }
   }
 
@@ -487,21 +523,52 @@ export class SockMan {
       rt.deepgram = null;
     }
 
-    if (rt.audioChunks.length > 0 && rt.roomId) {
+    if (rt.roomId) {
       try {
-        const totalLength = rt.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-        const audioBuffer = Buffer.concat(rt.audioChunks, totalLength);
-        
-        const wavBuffer = this.createWavBuffer(audioBuffer, this.config.audio.sampleRate, this.config.audio.channels);
-        
-        await putRecording(rt.roomId, key, wavBuffer);
-        this.logger.info({ sessionId: key, roomId: rt.roomId, size: wavBuffer.length }, "Recording saved");
+        const transcriptData: TranscriptData = {
+          segments: rt.transcriptSegments.map((seg): StorageTranscriptSegment => ({
+            text: seg.text,
+            role: seg.role,
+            startMs: seg.startMs,
+            endMs: seg.endMs,
+          })),
+          audioFragments: [],
+        };
+
+        if (rt.audioChunks.length > 0) {
+          const totalLength = rt.audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+          const audioBuffer = Buffer.concat(rt.audioChunks, totalLength);
+          const wavBuffer = this.createWavBuffer(audioBuffer, this.config.audio.sampleRate, this.config.audio.channels);
+          
+          await putRecording(rt.roomId, key, wavBuffer);
+          this.logger.info({ sessionId: key, roomId: rt.roomId, size: wavBuffer.length }, "Full recording saved");
+        }
+
+        for (const fragment of rt.audioFragments) {
+          if (fragment.chunks.length > 0) {
+            const totalLength = fragment.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const fragmentBuffer = Buffer.concat(fragment.chunks, totalLength);
+            const wavBuffer = this.createWavBuffer(fragmentBuffer, this.config.audio.sampleRate, this.config.audio.channels);
+            
+            await putRecording(rt.roomId, key, wavBuffer);
+            transcriptData.audioFragments.push({
+              id: fragment.id,
+              startMs: fragment.startMs,
+              endMs: fragment.endMs,
+              filename: `fragment-${fragment.id}.wav`,
+            });
+          }
+        }
+
+        await putSessionTranscript(rt.roomId, key, transcriptData);
+        this.logger.info({ sessionId: key, roomId: rt.roomId, segmentCount: transcriptData.segments.length }, "Transcript saved");
       } catch (error) {
         this.logger.error({ error, sessionId: key }, "Failed to save recording");
       }
     }
 
     rt.audioChunks = [];
+    rt.audioFragments = [];
     
     try {
       await endSession(sessionId);

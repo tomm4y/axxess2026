@@ -1,5 +1,5 @@
 
-import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideVideo, LucideUsers } from 'lucide-react';
+import { LucideQrCode, LucideUser, LucideX, LucideChevronRight, LucideVideo, LucideUsers, LucideMic } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentUser, getUserById } from './lib/api';
@@ -16,6 +16,7 @@ interface Room {
 interface RoomWithNames extends Room {
   clinician_name: string;
   patient_name: string;
+  hasActiveSession: boolean;
 }
 
 interface UserData {
@@ -39,15 +40,7 @@ const generateQRCodeFromUid = async (doctorUid: string): Promise<string> => {
   }
 };
 
-// ─── Wave dividers ────────────────────────────────────────────────────────────
-
-const WaveDivider: React.FC<{ flip?: boolean; color?: string }> = ({ flip = false, color = "white" }) => (
-  <svg viewBox="0 0 400 60" xmlns="http://www.w3.org/2000/svg"
-    style={{ display: "block", width: "calc(100% + 2px)", marginLeft: -1, transform: flip ? "scaleY(-1)" : "none" }}
-    preserveAspectRatio="none" height="60">
-    <path d="M-10,20 C40,55 100,5 160,28 C220,51 270,5 330,28 C370,43 390,18 410,22 L410,60 L-10,60 Z" fill={color} />
-  </svg>
-);
+// ─── Wave divider ────────────────────────────────────────────────────────────
 
 const WideWave: React.FC<{ color?: string; flip?: boolean }> = ({ color = "white", flip = false }) => (
   <svg viewBox="0 0 1440 80" xmlns="http://www.w3.org/2000/svg"
@@ -156,6 +149,16 @@ const PersonRow: React.FC<{
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: "#2d1a2e" }}>{displayName}</div>
+          {room.hasActiveSession && (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+              borderRadius: 50, padding: "2px 8px", marginTop: 4,
+            }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "white" }} />
+              <span style={{ fontSize: 10, fontWeight: 800, color: "white", textTransform: "uppercase", letterSpacing: 0.5 }}>Live</span>
+            </div>
+          )}
         </div>
       </button>
       
@@ -263,6 +266,8 @@ const Dashboard: React.FC = () => {
   
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteCreatorName, setInviteCreatorName] = useState('');
+  
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const fetchRooms = async () => {
     const token = localStorage.getItem('access_token');
@@ -280,22 +285,32 @@ const Dashboard: React.FC = () => {
         const roomsWithNames = await Promise.all(
           rawRooms.map(async (room) => {
             try {
-              const [clinicianData, patientData] = await Promise.all([
+              const [clinicianData, patientData, sessionResponse] = await Promise.all([
                 getUserById(room.clinician).catch(e => { console.error('[Dashboard] Failed to fetch clinician:', e); return null; }),
-                getUserById(room.patient).catch(e => { console.error('[Dashboard] Failed to fetch patient:', e); return null; })
+                getUserById(room.patient).catch(e => { console.error('[Dashboard] Failed to fetch patient:', e); return null; }),
+                fetch(`/api/rooms/${room.id}/active`).catch(() => ({ ok: false } as Response))
               ]);
-              console.log('[Dashboard] Room:', room.id, 'clinician:', clinicianData, 'patient:', patientData);
+              
+              let hasActiveSession = false;
+              if (sessionResponse.ok) {
+                const sessionData = await sessionResponse.json();
+                hasActiveSession = sessionData.active === true;
+              }
+              
+              console.log('[Dashboard] Room:', room.id, 'clinician:', clinicianData, 'patient:', patientData, 'active:', hasActiveSession);
               return {
                 ...room,
                 clinician_name: clinicianData?.name || 'Doctor',
-                patient_name: patientData?.name || 'Patient'
+                patient_name: patientData?.name || 'Patient',
+                hasActiveSession
               };
             } catch (e) {
               console.error('[Dashboard] Failed to process room:', room.id, e);
               return {
                 ...room,
                 clinician_name: 'Doctor',
-                patient_name: 'Patient'
+                patient_name: 'Patient',
+                hasActiveSession: false
               };
             }
           })
@@ -404,6 +419,28 @@ const Dashboard: React.FC = () => {
     };
     fetchUserAndData();
   }, []);
+
+  useEffect(() => {
+    const activeRoom = rooms.find(r => r.hasActiveSession);
+    if (activeRoom) {
+      fetch(`/api/rooms/${activeRoom.id}/active`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.sessionId) {
+            setActiveSessionId(data.sessionId);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setActiveSessionId(null);
+    }
+  }, [rooms]);
+
+  const goToActiveSession = () => {
+    if (activeSessionId) {
+      navigate(`/transcript?session_id=${activeSessionId}`);
+    }
+  };
 
   useEffect(() => {
     if (!showScannerModal || !scanning) return;
@@ -516,7 +553,7 @@ const Dashboard: React.FC = () => {
   if (!isDesktop) {
     return (
       <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa", position: "relative" }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.75); } }`}</style>
 
         {/* Decorative Background Blobs */}
         <img src='/Circle.svg' style={{ position: 'absolute', right: -80, top: '50%', transform: 'translateY(-50%)', width: 200, height: 200, pointerEvents: 'none', zIndex: 0 }} />
@@ -530,7 +567,7 @@ const Dashboard: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        <main style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', marginTop: 80, padding: '1rem 1.25rem 6rem', position: 'relative', zIndex: 10 }}>
+        <main style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', marginTop: 96, padding: '1rem 1.25rem 8.5rem', position: 'relative', zIndex: 10 }}>
 
           <h1 style={{ color: '#E73A5B', fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>
             {isClinician ? 'My Patients' : 'My Doctors'}
@@ -573,7 +610,15 @@ const Dashboard: React.FC = () => {
               rooms.map((room) => (
                 <button
                   key={room.id}
-                  onClick={() => navigate('/transcript')}
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    if (isClinician) {
+                      params.set('patient', room.patient);
+                    } else {
+                      params.set('clinician', room.clinician);
+                    }
+                    navigate(`/sessions?${params.toString()}`);
+                  }}
                   style={{ background: 'white', borderRadius: '0.75rem', padding: '1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', gap: '0.75rem', textAlign: 'left', width: '100%', border: 'none', cursor: 'pointer' }}
                 >
                   <div style={{ width: 48, height: 48, background: '#FBE4EE', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -583,6 +628,16 @@ const Dashboard: React.FC = () => {
                     <h3 style={{ color: '#1f2937', fontWeight: 600, margin: 0 }}>
                       {isClinician ? room.patient_name : room.clinician_name}
                     </h3>
+                    {room.hasActiveSession && (
+                      <div style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
+                        borderRadius: 50, padding: "2px 8px", marginTop: 4,
+                      }}>
+                        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "white" }} />
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "white", textTransform: "uppercase", letterSpacing: 0.5 }}>Live</span>
+                      </div>
+                    )}
                   </div>
                   <div style={{ color: '#E73A5B' }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -595,8 +650,54 @@ const Dashboard: React.FC = () => {
           </div>
         </main>
 
+        {/* Active Session Bubble */}
+        {activeSessionId && (
+          <div
+            onClick={goToActiveSession}
+            style={{
+              position: 'fixed',
+              bottom: '8rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 30,
+              maxWidth: '28rem',
+              width: 'calc(100% - 2.5rem)',
+              height: 56,
+              background: 'linear-gradient(135deg, #ff4d7d, #e91e8c)',
+              borderRadius: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 16px',
+              boxShadow: '0 8px 28px rgba(233,30,140,0.35)',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 12, height: 12, borderRadius: '50%',
+                background: 'white', animation: 'pulse 1s infinite'
+              }} />
+              <span style={{ color: 'white', fontSize: 16, fontWeight: 700 }}>
+                Active Session
+              </span>
+            </div>
+            <div style={{
+              background: 'rgba(255,255,255,0.2)',
+              borderRadius: 8,
+              padding: '6px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}>
+              <LucideMic color="white" size={16} />
+              <span style={{ color: 'white', fontSize: 14, fontWeight: 700 }}>Join</span>
+            </div>
+          </div>
+        )}
+
         {/* FAB */}
-        <div style={{ position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: '28rem', width: '100%', padding: '0 1.25rem' }}>
+        <div style={{ position: 'fixed', bottom: '5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: '28rem', width: '100%', padding: '0 1.25rem' }}>
           {isClinician ? (
             <button onClick={handleShowQRCode}
               style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: 'pointer' }}>
@@ -662,7 +763,51 @@ const Dashboard: React.FC = () => {
   return (
     <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes shimmer{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes shimmer{0%,100%{opacity:1}50%{opacity:0.5}} @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.75)}}`}</style>
+
+      {/* Active Session Bubble - Desktop */}
+      {activeSessionId && (
+        <div
+          onClick={goToActiveSession}
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            height: 56,
+            background: 'linear-gradient(135deg, #ff4d7d, #e91e8c)',
+            borderRadius: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 20px',
+            boxShadow: '0 8px 28px rgba(233,30,140,0.35)',
+            cursor: 'pointer',
+            zIndex: 100,
+            gap: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 12, height: 12, borderRadius: '50%',
+              background: 'white', animation: 'pulse 1s infinite'
+            }} />
+            <span style={{ color: 'white', fontSize: 16, fontWeight: 700 }}>
+              Active Session
+            </span>
+          </div>
+          <div style={{
+            background: 'rgba(255,255,255,0.2)',
+            borderRadius: 8,
+            padding: '6px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}>
+            <LucideMic color="white" size={16} />
+            <span style={{ color: 'white', fontSize: 14, fontWeight: 700 }}>Join</span>
+          </div>
+        </div>
+      )}
 
       {/* Hero */}
       <section style={{
@@ -770,7 +915,15 @@ const Dashboard: React.FC = () => {
                   key={room.id} 
                   room={room} 
                   isClinician={isClinician}
-                  onClick={() => navigate('/transcript')} 
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    if (isClinician) {
+                      params.set('patient', room.patient);
+                    } else {
+                      params.set('clinician', room.clinician);
+                    }
+                    navigate(`/sessions?${params.toString()}`);
+                  }} 
                   onCreateSession={handleCreateSession}
                 />
               ))}

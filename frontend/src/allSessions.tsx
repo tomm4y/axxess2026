@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './lib/AuthContext';
+import { useSearchParams } from 'react-router';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,9 +116,14 @@ const SkeletonRow: React.FC = () => (
 
 const AllSessions: React.FC = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDesktop, setIsDesktop] = useState(false);
+  
+  // Get filter parameters from URL
+  const clinicianId = searchParams.get('clinician');
+  const patientId = searchParams.get('patient');
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -132,23 +138,34 @@ const AllSessions: React.FC = () => {
     const fetchSessions = async () => {
       setLoading(true);
       try {
-        //  Replace blud with actal API call to fetch sessions for the current user
-        //   const res = await fetch(`/api/sessions?userId=${user.id}`);
-        //   const data = await res.json();
-        //   setSessions(data.sessions);
-
-        // Placeholder: simulate empty response from backend
-        const data: Session[] = [];
-        setSessions(data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        const token = localStorage.getItem('access_token');
+        const queryParams = new URLSearchParams();
+        if (clinicianId) queryParams.append('clinician', clinicianId);
+        if (patientId) queryParams.append('patient', patientId);
+        
+        const res = await fetch(`/api/sessions?${queryParams.toString()}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to fetch sessions');
+        }
+        
+        const data = await res.json();
+        setSessions(data.sessions);
       } catch (err) {
         console.error("Failed to fetch sessions:", err);
+        // Set empty array on error to prevent infinite loading
+        setSessions([]);
       } finally {
         setLoading(false);
       }
     };
 
     fetchSessions();
-  }, [user]);
+  }, [user, clinicianId, patientId]);
 
   // ── Session list content (shared between mobile & desktop) ──────────────────
 
@@ -227,10 +244,10 @@ const AllSessions: React.FC = () => {
             </div>
             <div style={{ marginBottom: 24 }}>
               <h1 style={{ color: "white", fontSize: 26, fontWeight: 900, margin: "0 0 4px", letterSpacing: -0.5, lineHeight: 1.1 }}>
-                All Sessions
+                {clinicianId || patientId ? 'Filtered Sessions' : 'All Sessions'}
               </h1>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 14, fontWeight: 600, margin: 0 }}>
-                Your appointment history
+                {clinicianId || patientId ? 'Sessions for selected person' : 'Your appointment history'}
               </p>
             </div>
             <div style={{ marginBottom: -2, marginLeft: -24, marginRight: -24 }}>
@@ -263,10 +280,10 @@ const AllSessions: React.FC = () => {
 
         <div style={{ maxWidth: 1100, margin: "0 auto", paddingBottom: 40 }}>
           <h1 style={{ color: "white", fontSize: 38, fontWeight: 900, margin: "0 0 8px", letterSpacing: -1.5, lineHeight: 1.05 }}>
-            All Sessions
+            {clinicianId || patientId ? 'Filtered Sessions' : 'All Sessions'}
           </h1>
           <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 16, fontWeight: 600, margin: 0 }}>
-            Your complete appointment history
+            {clinicianId || patientId ? 'Sessions for selected person' : 'Your complete appointment history'}
           </p>
         </div>
 

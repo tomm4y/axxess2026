@@ -1,7 +1,7 @@
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript, getRoomsForUser, isSessionActive, getRoomIdFromSession } from "./db";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscriptData, getSessionTranscriptData, getRoomsForUser, isSessionActive, getRoomIdFromSession, getActiveSession, endSession, getSessionsForUser } from "./db";
 import { RoomId, SessionId, UserId } from "./types";
 import { SockMan, createSockManWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
@@ -115,7 +115,10 @@ app.post("/debug/transcript_maker", async (req, res) => {
 
   try {
     const sessionId = SessionId.create(session_id);
-    await putSessionTranscript(sessionId, content);
+    await putSessionTranscriptData(sessionId, {
+      segments: [{ text: content, role: "Doctor", startMs: 0, endMs: 0 }],
+      audioFragments: [],
+    });
     
     const aiResult = await diagnosticAgent(content);
 
@@ -151,6 +154,48 @@ app.get("/api/rooms", async (req, res) => {
   } catch (error) {
     console.error("Failed to get rooms:", error);
     res.status(500).json({ error: "Failed to get rooms" });
+  }
+});
+
+app.get("/api/sessions", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+  const { clinician, patient } = req.query;
+  
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    const userId = payload.sub;
+    if (!userId) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+
+    const userIdObj = UserId.create(userId);
+    const sessions = await getSessionsForUser(
+      userIdObj, 
+      clinician as string || undefined, 
+      patient as string || undefined
+    );
+
+    // Transform sessions to match frontend expected format
+    const transformedSessions = sessions.map((session: any) => ({
+      id: session.id,
+      doctorName: session.clinician_name,
+      date: session.created_at,
+      roomId: session.room_id,
+      active: session.active,
+      patientName: session.patient_name,
+    }));
+
+    res.json({ sessions: transformedSessions });
+  } catch (error) {
+    console.error("Failed to get sessions:", error);
+    res.status(500).json({ error: "Failed to get sessions" });
   }
 });
 
@@ -216,6 +261,143 @@ app.get("/api/session/:sessionId/active", async (req, res) => {
   } catch (error) {
     console.error("Failed to check session active:", error);
     res.status(500).json({ error: "Failed to check session status" });
+  }
+});
+
+app.get("/api/session/:sessionId/transcript", async (req, res) => {
+  const { sessionId } = req.params;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId parameter required" });
+    return;
+  }
+
+  try {
+    const sessionIdObj = SessionId.create(sessionId);
+    
+    // First check if session is active in SockMan
+    const sessionRuntime = sockMan.getSessionRuntime(sessionIdObj);
+    console.log(`[Transcript API] Session ${sessionId} runtime check:`, {
+      hasRuntime: !!sessionRuntime,
+      segmentCount: sessionRuntime?.transcriptSegments?.length || 0,
+      isRecording: sessionRuntime?.recording || false
+    });
+    
+    if (sessionRuntime) {
+      // Always return active session transcript if runtime exists, even if empty
+      const transcript = sessionRuntime.transcriptSegments.map(segment => ({
+        text: segment.text,
+        role: segment.role,
+        isFinal: segment.isFinal,
+        startMs: segment.startMs,
+      }));
+
+      console.log(`[Transcript API] Returning active transcript for session ${sessionId}: ${transcript.length} segments`);
+      res.json({ transcript });
+      return;
+    }
+    
+    // If no active session runtime, try to get from archived storage
+    console.log(`[Transcript API] No active runtime for session ${sessionId}, checking archive...`);
+    const transcriptData = await getSessionTranscriptData(sessionIdObj);
+    
+    // Transform the archived data to match frontend's expected format
+    const transcript = transcriptData.segments.map(segment => ({
+      text: segment.text,
+      role: segment.role,
+      isFinal: true, // All cached segments are final
+      startMs: segment.startMs,
+    }));
+
+    console.log(`[Transcript API] Returning archived transcript for session ${sessionId}: ${transcript.length} segments`);
+    res.json({ transcript });
+  } catch (error) {
+    console.error("Failed to fetch session transcript:", error);
+    // If transcript doesn't exist in storage either, return empty array instead of error
+    if (error instanceof Error && (error.message.includes("not found") || error.message.includes("Session not found") || error.message.includes("StorageUnknownError"))) {
+      console.log(`[Transcript API] No transcript found for session ${sessionId}, returning empty array`);
+      res.json({ transcript: [] });
+    } else {
+      res.status(500).json({ error: "Failed to fetch transcript" });
+    }
+  }
+});
+
+app.post("/api/session/:sessionId/end", async (req, res) => {
+  const { sessionId } = req.params;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "sessionId parameter required" });
+    return;
+  }
+
+  try {
+    const sessionIdObj = SessionId.create(sessionId);
+    
+    // Check if session is active in SockMan
+    const sessionRuntime = sockMan.getSessionRuntime(sessionIdObj);
+    
+    if (sessionRuntime) {
+      // End active session through SockMan (this will save transcript and update database)
+      console.log(`[End Session] Ending active session ${sessionId} through SockMan`);
+      
+      // Stop recording if active
+      if (sessionRuntime.recording) {
+        sockMan.stopDeepgram(sessionIdObj);
+      }
+      
+      // End session and save data
+      await sockMan.endSessionAndSaveRecording(sessionIdObj);
+      
+      // Notify other participant
+      const sockets = sockMan.getSessionSockets(sessionIdObj);
+      if (sockets) {
+        const otherSocket = sockets.clinicianUserId === req.body.userId ? sockets.patient : sockets.clinician;
+        if (otherSocket.readyState === WebSocket.OPEN) {
+          otherSocket.send(JSON.stringify({ 
+            type: "session_ended", 
+            sessionId: sessionId,
+            endedBy: req.body.userId,
+            endedByName: req.body.userName || "Doctor"
+          }));
+        }
+      }
+      
+      res.json({ success: true, message: "Session ended successfully" });
+    } else {
+      // Session might be orphaned (active in DB but no SockMan runtime)
+      console.log(`[End Session] Session ${sessionId} not found in SockMan, checking if orphaned...`);
+      
+      // Try to end it in the database directly
+      try {
+        await endSession(sessionIdObj);
+        console.log(`[End Session] Ended orphaned session ${sessionId} in database`);
+        res.json({ success: true, message: "Orphaned session ended successfully" });
+      } catch (dbError) {
+        console.error(`[End Session] Failed to end orphaned session ${sessionId}:`, dbError);
+        res.status(404).json({ error: "Session not found or already ended" });
+      }
+    }
+  } catch (error) {
+    console.error(`[End Session] Failed to end session ${sessionId}:`, error);
+    res.status(500).json({ error: "Failed to end session" });
+  }
+});
+
+app.get("/api/rooms/:roomId/active", async (req, res) => {
+  const { roomId } = req.params;
+
+  if (!roomId || typeof roomId !== "string") {
+    res.status(400).json({ error: "roomId parameter required" });
+    return;
+  }
+
+  try {
+    const sessionId = await getActiveSession(RoomId.create(roomId));
+    res.json({ active: sessionId !== null, sessionId: sessionId?.toString() || null });
+  } catch (error) {
+    console.error("Failed to check room active:", error);
+    res.status(500).json({ error: "Failed to check room status" });
   }
 });
 

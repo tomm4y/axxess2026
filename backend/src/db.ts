@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import "dotenv/config";
 import { UserId, RoomId, SessionId } from "./types";
-import { createSessionFolder, putSessionTranscript as putTranscript, getSessionTranscript as getTranscript } from "./storage";
+import { createSessionFolder, putSessionTranscript, getSessionTranscript, TranscriptData } from "./storage";
 
 const password = process.env.SUPABASE_DB_PASSWORD;
 const connectionString = `postgresql://postgres.ajdzgecxzrryyiwznqku:${password}@aws-1-us-east-1.pooler.supabase.com:6543/postgres`;
@@ -119,16 +119,16 @@ export async function createSession(roomId: RoomId): Promise<SessionId> {
   return sessionId;
 }
 
-export async function putSessionTranscript(sessionId: SessionId, content: string): Promise<void> {
+export async function putSessionTranscriptData(sessionId: SessionId, data: TranscriptData): Promise<void> {
   const roomId = await getRoomIdFromSession(sessionId);
   if (!roomId) throw new Error("Session not found");
-  await putTranscript(roomId.toString(), sessionId.toString(), content);
+  await putSessionTranscript(roomId.toString(), sessionId.toString(), data);
 }
 
-export async function getSessionTranscript(sessionId: SessionId): Promise<string> {
+export async function getSessionTranscriptData(sessionId: SessionId): Promise<TranscriptData> {
   const roomId = await getRoomIdFromSession(sessionId);
   if (!roomId) throw new Error("Session not found");
-  return await getTranscript(roomId.toString(), sessionId.toString());
+  return await getSessionTranscript(roomId.toString(), sessionId.toString());
 }
 
 export async function getAllSessionsDebug(activeOnly?: boolean): Promise<object[]> {
@@ -137,6 +137,38 @@ export async function getAllSessionsDebug(activeOnly?: boolean): Promise<object[
     return result.rows;
   }
   const result = await pool.query("select * from sessions");
+  return result.rows;
+}
+
+export async function getSessionsForUser(userId: UserId, clinicianId?: string, patientId?: string): Promise<object[]> {
+  let query = `
+    SELECT s.*, 
+           u_clinician.name as clinician_name,
+           u_patient.name as patient_name,
+           r.id as room_id
+    FROM sessions s
+    JOIN rooms r ON s.room = r.id
+    JOIN users u_clinician ON r.clinician = u_clinician.id
+    JOIN users u_patient ON r.patient = u_patient.id
+    WHERE (r.clinician = $1 OR r.patient = $1)
+  `;
+  
+  const params: any[] = [userId.toString()];
+  
+  // Add additional filters if provided
+  if (clinicianId) {
+    query += ` AND r.clinician = $${params.length + 1}`;
+    params.push(clinicianId);
+  }
+  
+  if (patientId) {
+    query += ` AND r.patient = $${params.length + 1}`;
+    params.push(patientId);
+  }
+  
+  query += ` ORDER BY s.created_at DESC`;
+  
+  const result = await pool.query(query, params);
   return result.rows;
 }
 
@@ -179,7 +211,7 @@ export async function getRoomsByClinician(clinician: UserId): Promise<RoomId[]> 
 
 export async function getRoomsForUser(userId: UserId): Promise<object[]> {
   const result = await pool.query(
-    "select id, clinician, patient from rooms where clinician = $1 or patient = $1",
+    "select * from rooms where clinician = $1 or patient = $1",
     [userId.toString()]
   );
   return result.rows;

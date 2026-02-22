@@ -77,6 +77,13 @@ type RecordingStoppedEvent = {
   sessionId: string
 }
 
+type SessionEndedEvent = {
+  type: 'session_ended'
+  sessionId: string
+  endedBy: string
+  endedByName: string
+}
+
 type ServerMessage =
   | SessionInviteEvent
   | RoomCreatedEvent
@@ -89,6 +96,7 @@ type ServerMessage =
   | ConnectedEvent
   | RecordingStartedEvent
   | RecordingStoppedEvent
+  | SessionEndedEvent
 
 type Handler<T> = (event: T) => void
 
@@ -125,6 +133,7 @@ export class EventSocket {
     connected: new Set<Handler<ConnectedEvent>>(),
     recording_started: new Set<Handler<RecordingStartedEvent>>(),
     recording_stopped: new Set<Handler<RecordingStoppedEvent>>(),
+    session_ended: new Set<Handler<SessionEndedEvent>>(),
   }
 
   private getWsUrl(): string {
@@ -323,6 +332,10 @@ export class EventSocket {
     return this.registerHandler('connected', handler as Handler<unknown>)
   }
 
+  registerOnSessionEnded(handler: Handler<SessionEndedEvent>): Unsubscribe {
+    return this.registerHandler('session_ended', handler as Handler<unknown>)
+  }
+
   respondToInvite(accept: boolean): void {
     this.ensureConnected().then(() => {
       this.ws?.send(JSON.stringify({ type: 'session_invite_response', accept }))
@@ -338,6 +351,12 @@ export class EventSocket {
   stopTranscription(sessionId: string): void {
     this.ensureConnected().then(() => {
       this.ws?.send(JSON.stringify({ type: 'stop', sessionId }))
+    }).catch(console.error)
+  }
+
+  endSession(sessionId: string): void {
+    this.ensureConnected().then(() => {
+      this.ws?.send(JSON.stringify({ type: 'end_session', sessionId }))
     }).catch(console.error)
   }
 
