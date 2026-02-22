@@ -310,9 +310,9 @@ const HealthSafeLogin: React.FC = () => {
 
             
           </div>
-            <div style={{ display: "flex", alignItems: "center", fontSize: 22, fontWeight: 800, color: "white" }}>
-              <img src="/Logo.svg"/>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", fontSize: 22, fontWeight: 800, color: "white" }}>
+            <img src="/Logo.svg"/>
+          </div>
 
           {/* Title */}
           <div
@@ -327,7 +327,7 @@ const HealthSafeLogin: React.FC = () => {
             <div className="font-sf-semibold text-2xl text-white">
               Welcome Back! 
             </div>
-            <div className="font-sf-semibold" style={{ color: "rgba(255,255,255,0.8)", fontSize: 15, fontWeight: 600, marginTop: 2 }}>
+            <div className="font-sf-semibold" style={{ color: "rgba(255,255,255,0.8)" }}>
               Sign in to your account
             </div>
           </div>
