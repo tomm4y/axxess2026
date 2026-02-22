@@ -1,9 +1,9 @@
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript } from "./db";
-import { RoomId, SessionId } from "./types";
-import { S2TService, createS2TWebSocketServer } from "./deepgram";
+import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript, getRoomsByPatient, getOrCreateRoom } from "./db";
+import { RoomId, SessionId, UserId } from "./types";
+import { SockMan, createSockManWebSocketServer } from "./deepgram";
 import authRouter from "./auth";
 import "dotenv/config";
 
@@ -17,7 +17,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Auth routes
 app.use('/auth', authRouter);
 
 const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
@@ -30,7 +29,7 @@ const logger = {
   error: (obj: unknown, msg?: string) => console.error(msg ?? "", obj),
 };
 
-const s2tService = new S2TService(
+const sockMan = new SockMan(
   {
     port,
     deepgramApiKey,
@@ -122,12 +121,72 @@ app.post("/debug/transcript_maker", async (req, res) => {
   }
 });
 
-const server = createServer(app);
-createS2TWebSocketServer(s2tService, server);
+app.get("/get_patient_clinicians", async (req, res) => {
+  const { patient } = req.query;
+  
+  if (!patient || typeof patient !== "string") {
+    res.status(400).json({ error: "patient query parameter required" });
+    return;
+  }
 
-export { s2tService };
+  const userId = UserId.create(patient);
+  const rooms = await getRoomsByPatient(userId);
+  res.json({ rooms: rooms.map(r => r.toString()) });
+});
+
+app.post("/create_room", async (req, res) => {
+  const { patient, clinician } = req.query;
+
+  if (!patient || typeof patient !== "string") {
+    res.status(400).json({ error: "patient query parameter required" });
+    return;
+  }
+
+  if (!clinician || typeof clinician !== "string") {
+    res.status(400).json({ error: "clinician query parameter required" });
+    return;
+  }
+
+  const patientId = UserId.create(patient);
+  const clinicianId = UserId.create(clinician);
+
+  const result = await sockMan.createRoom(patientId, clinicianId);
+  
+  res.json({ roomId: result.roomId.toString() });
+});
+
+app.post("/create_session", async (req, res) => {
+  const { room, creator } = req.query;
+
+  if (!room || typeof room !== "string") {
+    res.status(400).json({ error: "room query parameter required" });
+    return;
+  }
+
+  if (!creator || typeof creator !== "string") {
+    res.status(400).json({ error: "creator query parameter required" });
+    return;
+  }
+
+  const roomId = RoomId.create(room);
+  const creatorId = UserId.create(creator);
+
+  const sent = await sockMan.initiateSessionInvite(roomId, creatorId);
+
+  if (!sent) {
+    res.status(400).json({ error: "Room not found or users not connected" });
+    return;
+  }
+
+  res.json({ status: "invite_sent" });
+});
+
+const server = createServer(app);
+createSockManWebSocketServer(sockMan, server);
+
+export { sockMan };
 
 server.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
-  console.log(`WebSocket endpoint: ws://localhost:${port}/ws?sessionId={session_id}`);
+  console.log(`WebSocket endpoint: ws://localhost:${port}/ws?userId={user_id}`);
 });
