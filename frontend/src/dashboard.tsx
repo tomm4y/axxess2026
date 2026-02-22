@@ -379,8 +379,19 @@ const Dashboard: React.FC = () => {
       setInviteCreatorName(creatorData?.name || 'Doctor');
       setShowInviteModal(true);
     });
-    return unsubscribe;
-  }, []);
+
+    const unsubscribeSessionStarted = eventSocket.registerOnAny((event) => {
+      if (event.type === 'session_started') {
+        console.log('[Dashboard] Session started:', event);
+        navigate(`/transcript?session_id=${event.sessionId}`);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeSessionStarted();
+    };
+  }, [navigate]);
 
   const handleAcceptInvite = () => {
     eventSocket.respondToInvite(true);
@@ -567,7 +578,7 @@ const Dashboard: React.FC = () => {
         </header>
 
         {/* Main Content Area */}
-        <main style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', marginTop: 96, padding: '1rem 1.25rem 8.5rem', position: 'relative', zIndex: 10 }}>
+        <main style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', marginTop: 96, padding: '1rem 1.25rem 6.5rem', position: 'relative', zIndex: 10 }}>
 
           <h1 style={{ color: '#E73A5B', fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>
             {isClinician ? 'My Patients' : 'My Doctors'}
@@ -656,7 +667,7 @@ const Dashboard: React.FC = () => {
             onClick={goToActiveSession}
             style={{
               position: 'fixed',
-              bottom: '8rem',
+              bottom: '5rem',
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 30,
@@ -697,24 +708,26 @@ const Dashboard: React.FC = () => {
         )}
 
         {/* FAB */}
-        <div style={{ position: 'fixed', bottom: '5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: '28rem', width: '100%', padding: '0 1.25rem' }}>
-          {isClinician ? (
-            <button onClick={handleShowQRCode}
-              style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: 'pointer' }}>
-              <LucideQrCode size={24} />
-              Show Patient Your QR Code
-            </button>
-          ) : (
-            <button onClick={handleScanQRCode} disabled={scanning}
-              style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: scanning ? 'not-allowed' : 'pointer', opacity: scanning ? 0.7 : 1 }}>
-              {scanning ? (
-                <><div style={{ width: 24, height: 24, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Scanning...</>
-              ) : (
-                <><LucideQrCode size={24} />Scan Doctor's QR Code</>
-              )}
-            </button>
-          )}
-        </div>
+        {!activeSessionId && (
+          <div style={{ position: 'fixed', bottom: '5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: '28rem', width: '100%', padding: '0 1.25rem' }}>
+            {isClinician ? (
+              <button onClick={handleShowQRCode}
+                style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: 'pointer' }}>
+                <LucideQrCode size={24} />
+                Show Patient Your QR Code
+              </button>
+            ) : (
+              <button onClick={handleScanQRCode} disabled={scanning}
+                style={{ width: '100%', background: 'linear-gradient(to right, #ED385A, #E73A8A)', color: 'white', border: 'none', borderRadius: 9999, padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', boxShadow: '0 8px 24px rgba(233,30,140,0.35)', fontWeight: 600, fontSize: '1.125rem', cursor: scanning ? 'not-allowed' : 'pointer', opacity: scanning ? 0.7 : 1 }}>
+                {scanning ? (
+                  <><div style={{ width: 24, height: 24, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Scanning...</>
+                ) : (
+                  <><LucideQrCode size={24} />Scan Doctor's QR Code</>
+                )}
+              </button>
+            )}
+          </div>
+        )}
 
         {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
 
