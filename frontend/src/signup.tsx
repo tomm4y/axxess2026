@@ -1,5 +1,7 @@
 import { LucideArrowLeft } from "lucide-react";
 import { useState, useEffect, type CSSProperties, type MouseEvent, type ChangeEvent } from "react";
+import { useNavigate, Link } from "react-router";
+import { signup } from "./lib/api";
 
 // ─── Shared Components ────────────────────────────────────────────────────────
 
@@ -342,6 +344,9 @@ const HealthSafeSignUp: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
@@ -359,12 +364,28 @@ const HealthSafeSignUp: React.FC = () => {
       }
     : { fullName: "", email: "", confirmPassword: "", role: "", agreed: "" };
 
-  const handleSignUp = (e: MouseEvent<HTMLButtonElement>) => {
+  const handleSignUp = async (e: MouseEvent<HTMLButtonElement>) => {
     setSubmitted(true);
+    setApiError("");
     e.currentTarget.style.transform = "scale(0.98)";
     setTimeout(() => {
       if (e.currentTarget) e.currentTarget.style.transform = "scale(1)";
     }, 150);
+
+    // Check for validation errors
+    if (!fullName || !email || !role || !/\S+@\S+\.\S+/.test(email) || (confirmPassword && confirmPassword !== password)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await signup(email, password, fullName, role === "doctor");
+      navigate("/login");
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : "Signup failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -384,9 +405,9 @@ const HealthSafeSignUp: React.FC = () => {
           position: "relative", overflow: "visible",
         }}>
           <div style={{ height: 24 }} />
-            <div className="absolute top-8 left-5">
+            <Link to="/" className="absolute top-8 left-5">
               <LucideArrowLeft color="white" size={35}/>
-            </div>
+            </Link>
           {/* Top row */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
@@ -467,9 +488,27 @@ const HealthSafeSignUp: React.FC = () => {
             </p>
           )}
 
+          {/* API Error message */}
+          {apiError && (
+            <div
+              style={{
+                background: "#fff5f8",
+                border: "2px solid #ff4d7d",
+                borderRadius: 14,
+                padding: "12px 16px",
+                color: "#ff4d7d",
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              {apiError}
+            </div>
+          )}
+
           {/* Create Account button */}
           <button
             onClick={handleSignUp}
+            disabled={loading}
             onMouseEnter={(e: MouseEvent<HTMLButtonElement>) => {
               e.currentTarget.style.boxShadow = "0 12px 32px rgba(233,30,140,0.45)";
             }}
@@ -480,16 +519,16 @@ const HealthSafeSignUp: React.FC = () => {
               background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
               color: "white", border: "none", borderRadius: 50,
               padding: "16px 0", fontSize: 17, fontWeight: 700,
-              cursor: "pointer", letterSpacing: 0.3,
+              cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3,
               boxShadow: "0 8px 24px rgba(233,30,140,0.35)",
               fontFamily: "'Nunito', 'Poppins', sans-serif",
               marginTop: 4,
-              opacity: visible ? 1 : 0,
+              opacity: visible ? (loading ? 0.7 : 1) : 0,
               transform: visible ? "translateY(0)" : "translateY(18px)",
               transition: "opacity 0.55s ease 0.68s, transform 0.55s ease 0.68s, box-shadow 0.2s",
             }}
           >
-            Create Account
+            {loading ? "Creating account..." : "Create Account"}
           </button>
 
           {/* Login link */}
@@ -501,13 +540,17 @@ const HealthSafeSignUp: React.FC = () => {
             <span style={{ color: "#9a7a99", fontSize: 14, fontWeight: 600 }}>
               Already have an account?{" "}
             </span>
-            <button style={{
-              background: "none", border: "none", color: "#e91e8c",
-              fontSize: 14, fontWeight: 800, cursor: "pointer",
-              fontFamily: "'Nunito', 'Poppins', sans-serif",
-            }}>
+            <Link
+              to="/login"
+              style={{
+                background: "none", border: "none", color: "#e91e8c",
+                fontSize: 14, fontWeight: 800, cursor: "pointer",
+                fontFamily: "'Nunito', 'Poppins', sans-serif",
+                textDecoration: "none",
+              }}
+            >
               Log In
-            </button>
+            </Link>
           </div>
         </div>
 

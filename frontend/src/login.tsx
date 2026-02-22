@@ -1,5 +1,7 @@
-import { LucideAArrowDown, LucideArrowLeft } from "lucide-react";
+import { LucideArrowLeft } from "lucide-react";
 import { useState, useEffect, type CSSProperties, type MouseEvent, type ChangeEvent } from "react";
+import { useNavigate, Link } from "react-router";
+import { login } from "./lib/api";
 
 // ─── Shared Components ───────────────────────────────────────────────────────
 
@@ -25,20 +27,6 @@ const WaveDivider: React.FC<WaveDividerProps> = ({ flip = false, color = "white"
       d="M-10,20 C40,55 100,5 160,28 C220,51 270,5 330,28 C370,43 390,18 410,22 L410,60 L-10,60 Z"
       fill={color}
     />
-  </svg>
-);
-
-const PlusIcon: React.FC = () => (
-  <svg
-    width="28"
-    height="28"
-    viewBox="0 0 36 36"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    style={{ display: "inline-block", verticalAlign: "middle", margin: "0 2px" }}
-  >
-    <rect width="36" height="36" rx="8" fill="white" fillOpacity="0.25" />
-    <path d="M18 10V26M10 18H26" stroke="white" strokeWidth="3" strokeLinecap="round" />
   </svg>
 );
 
@@ -240,11 +228,27 @@ const HealthSafeLogin: React.FC = () => {
   const [visible, setVisible] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
     return () => clearTimeout(t);
   }, []);
+
+  const handleLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await login(email, password);
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const heroStyle: CSSProperties = {
     background: "linear-gradient(160deg, #ff4d7d 0%, #ff2d6a 40%, #e91e8c 100%)",
@@ -293,9 +297,9 @@ const HealthSafeLogin: React.FC = () => {
         {/* Hero */}
         <div style={heroStyle}>
           <div style={{ height: 24 }} />
-            <div className="absolute top-8 left-5">
+            <Link to="/" className="absolute top-8 left-5">
               <LucideArrowLeft color="white" size={35}/>
-            </div>
+            </Link>
           {/* Back arrow + brand */}
           <div
             style={{
@@ -399,8 +403,27 @@ const HealthSafeLogin: React.FC = () => {
             </button>
           </div>
 
+          {/* Error message */}
+          {error && (
+            <div
+              style={{
+                background: "#fff5f8",
+                border: "2px solid #ff4d7d",
+                borderRadius: 14,
+                padding: "12px 16px",
+                color: "#ff4d7d",
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
           {/* Login button */}
           <button
+            onClick={handleLogin}
+            disabled={loading}
             onMouseEnter={handleLoginEnter}
             onMouseLeave={handleLoginLeave}
             style={{
@@ -411,17 +434,17 @@ const HealthSafeLogin: React.FC = () => {
               padding: "16px 0",
               fontSize: 17,
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: loading ? "not-allowed" : "pointer",
               letterSpacing: 0.3,
               boxShadow: "0 8px 24px rgba(233,30,140,0.35)",
               fontFamily: "'Nunito', 'Poppins', sans-serif",
               marginTop: 4,
-              opacity: visible ? 1 : 0,
+              opacity: visible ? (loading ? 0.7 : 1) : 0,
               transform: visible ? "translateY(0)" : "translateY(20px)",
               transition: "all 0.6s ease 0.5s, box-shadow 0.2s, transform 0.2s",
             }}
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
 
           {/* Divider */}
@@ -517,7 +540,8 @@ const HealthSafeLogin: React.FC = () => {
             <span style={{ color: "#9a7a99", fontSize: 14, fontWeight: 600 }}>
               Don't have an account?{" "}
             </span>
-            <button
+            <Link
+              to="/signup"
               style={{
                 background: "none",
                 border: "none",
@@ -526,10 +550,11 @@ const HealthSafeLogin: React.FC = () => {
                 fontWeight: 800,
                 cursor: "pointer",
                 fontFamily: "'Nunito', 'Poppins', sans-serif",
+                textDecoration: "none",
               }}
             >
               Sign Up
-            </button>
+            </Link>
           </div>
         </div>
 

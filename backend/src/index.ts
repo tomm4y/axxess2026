@@ -1,14 +1,24 @@
 import { createServer } from "http";
 import express from "express";
+import cors from "cors";
 import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript } from "./db";
 import { RoomId, SessionId } from "./types";
 import { S2TService, createS2TWebSocketServer } from "./deepgram";
+import authRouter from "./auth";
 import "dotenv/config";
 
 const app = express();
 const port = 3000;
 
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true,
+}));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Auth routes
+app.use('/auth', authRouter);
 
 const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
 if (!deepgramApiKey) {
