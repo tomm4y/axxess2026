@@ -184,3 +184,17 @@ export async function getRoomsForUser(userId: UserId): Promise<object[]> {
   );
   return result.rows;
 }
+
+export async function getSessionsByPatient(patient: UserId): Promise<SessionId[]> {
+  const rooms = await getRoomsByPatient(patient);
+  const result = await pool.query("select id from sessions where room = any($1)", [rooms.map(r => r.toString())]);
+  return result.rows.map(row => SessionId.create(row.id));
+}
+
+export async function getSessionsByClinician(clinician: UserId): Promise<SessionId[]> {
+  const rooms = await getRoomsByClinician(clinician);
+  const result = await pool.query("select id from sessions where room = any($1)", [rooms.map(r => r.toString())]);
+  return result.rows.map(row => SessionId.create(row.id));
+}
+  
+  
