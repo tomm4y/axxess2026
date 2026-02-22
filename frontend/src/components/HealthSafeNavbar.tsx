@@ -141,7 +141,10 @@ export default function HealthSafeNavbar({
           }}
         >
           {/* Logo */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            onClick={() => { setActive("current-room"); navigate("/dashboard"); }}
+            style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+          >
             <img className="w-50" src="/Logo.svg"/>
           </div>
 
