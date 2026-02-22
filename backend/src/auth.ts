@@ -6,16 +6,28 @@ import { UserId } from './types'
 const router = Router()
 
 router.post('/signup', async (req, res) => {
+  console.log('Signup request received:', { email: req.body?.email, name: req.body?.name })
+  
   const { email, password, name, is_clinician } = req.body
 
   if (!email || !password || !name) {
+    console.log('Missing required fields')
     res.status(400).json({ error: 'Email, password, and name are required' })
     return
   }
 
-  const supabase = getSupabaseAdmin()
+  let supabase
+  try {
+    supabase = getSupabaseAdmin()
+    console.log('Supabase admin client created')
+  } catch (e) {
+    console.error('Failed to create Supabase client:', e)
+    res.status(500).json({ error: `Supabase config error: ${e}` })
+    return
+  }
 
   try {
+    console.log('Creating auth user...')
     // Create auth user
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
@@ -24,17 +36,23 @@ router.post('/signup', async (req, res) => {
     })
 
     if (authError) {
+      console.error('Auth error:', authError)
       res.status(400).json({ error: authError.message })
       return
     }
 
     if (!authData.user) {
+      console.error('No user in authData')
       res.status(500).json({ error: 'Failed to create user' })
       return
     }
 
-    // Insert into users table
-    await createUser(email, name, is_clinician ?? false)
+    console.log('Auth user created:', authData.user.id)
+
+    // Insert into users table with the same ID as auth user
+    console.log('Creating user in database...')
+    await createUser(email, name, is_clinician ?? false, authData.user.id)
+    console.log('User created in database')
 
     res.json({
       message: 'Account created successfully',
@@ -45,7 +63,7 @@ router.post('/signup', async (req, res) => {
     })
   } catch (error) {
     console.error('Signup error:', error)
-    res.status(500).json({ error: 'An unexpected error occurred' })
+    res.status(500).json({ error: 'An unexpected error occurred', details: String(error) })
   }
 })
 
@@ -71,7 +89,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Get user data from users table
-    const userData = getUserData(UserId.create(data.user.id))
+    const userData = await getUserData(UserId.create(data.user.id))
 
     res.json({
       message: 'Login successful',

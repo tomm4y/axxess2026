@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000'
+const API_URL = ''
 
 interface LoginResponse {
   message: string
@@ -39,7 +39,13 @@ export async function login(email: string, password: string): Promise<LoginRespo
     body: JSON.stringify({ email, password }),
   })
 
-  const data = await response.json()
+  let data
+  try {
+    data = await response.json()
+  } catch (e) {
+    console.error('Failed to parse response:', e)
+    throw new Error(`Server returned invalid JSON (status ${response.status})`)
+  }
   
   if (!response.ok) {
     throw new Error(data.error || 'Login failed')
@@ -64,7 +70,13 @@ export async function signup(
     body: JSON.stringify({ email, password, name, is_clinician }),
   })
 
-  const data = await response.json()
+  let data
+  try {
+    data = await response.json()
+  } catch (e) {
+    console.error('Failed to parse response:', e)
+    throw new Error(`Server returned invalid JSON (status ${response.status})`)
+  }
   
   if (!response.ok) {
     throw new Error(data.error || 'Signup failed')
@@ -106,7 +118,12 @@ export async function getCurrentUser(): Promise<UserResponse | null> {
     return null
   }
 
-  return response.json()
+  try {
+    return await response.json()
+  } catch (e) {
+    console.error('Failed to parse response:', e)
+    return null
+  }
 }
 
 export function isAuthenticated(): boolean {
