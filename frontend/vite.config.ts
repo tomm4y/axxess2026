@@ -10,29 +10,29 @@ export default defineConfig({
     allowedHosts: ['.trycloudflare.com'],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3000/",
+        target: "http://localhost:3000/",
         changeOrigin: true,
         secure: false,
       },
       "/auth": {
-        target: "http://127.0.0.1:3000/",
+        target: "http://localhost:3000/",
         changeOrigin: true,
         secure: false,
       },
       "/ws": {
-        target: "ws://127.0.0.1:3000",
+        target: "ws://localhost:3000",
         ws: true,
       },
       "/create_room": {
-        target: "http://127.0.0.1:3000",
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
       "/create_session": {
-        target: "http://127.0.0.1:3000",
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
       "/debug": {
-        target: "http://127.0.0.1:3000",
+        target: "http://localhost:3000",
         changeOrigin: true,
       },
     },

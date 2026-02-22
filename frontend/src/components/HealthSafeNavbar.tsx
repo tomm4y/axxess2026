@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router";
+import { logout } from "../lib/api";
 
 type NavItem = {
   id: string;
@@ -46,12 +48,23 @@ interface HealthSafeNavbarProps {
 const GRADIENT = "linear-gradient(90deg, #ED385A 0%, #E73A8A 100%)";
 const FONT = "'SF Pro Text', -apple-system, BlinkMacSystemFont, sans-serif";
 
+const LogOutIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+);
+
 export default function HealthSafeNavbar({
   defaultActive = "current-room",
   onTabChange,
 }: HealthSafeNavbarProps) {
   const [active, setActive] = useState(defaultActive);
   const [isDesktop, setIsDesktop] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -60,7 +73,34 @@ export default function HealthSafeNavbar({
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    if (settingsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [settingsOpen]);
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      navigate("/");
+    } catch (err) {
+      console.error("Sign out failed:", err);
+    }
+  };
+
   const handleSelect = (id: string) => {
+    if (id === "settings") {
+      setSettingsOpen((prev) => !prev);
+      return;
+    }
+    setSettingsOpen(false);
     setActive(id);
     onTabChange?.(id);
   };
@@ -100,7 +140,9 @@ export default function HealthSafeNavbar({
           <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
             {NAV_ITEMS.map((item) => {
               const isActive = active === item.id;
-              return (
+              const isSettings = item.id === "settings";
+
+              const btn = (
                 <button
                   key={item.id}
                   onClick={() => handleSelect(item.id)}
@@ -120,14 +162,14 @@ export default function HealthSafeNavbar({
                     display: "flex",
                     alignItems: "center",
                     gap: 7,
-                    background: isActive ? "rgba(255,255,255,0.22)" : "transparent",
+                    background: (isSettings ? settingsOpen : isActive) ? "rgba(255,255,255,0.22)" : "transparent",
                     border: "none",
                     borderRadius: 9,
                     cursor: "pointer",
                     padding: "9px 18px",
-                    color: isActive ? "white" : "rgba(255,255,255,0.68)",
+                    color: (isSettings ? settingsOpen : isActive) ? "white" : "rgba(255,255,255,0.68)",
                     fontSize: 14,
-                    fontWeight: isActive ? 600 : 400,
+                    fontWeight: (isSettings ? settingsOpen : isActive) ? 600 : 400,
                     fontFamily: FONT,
                     letterSpacing: "0.01em",
                     outline: 'none',
@@ -140,6 +182,56 @@ export default function HealthSafeNavbar({
                   {item.label}
                 </button>
               );
+
+              if (isSettings) {
+                return (
+                  <div key={item.id} ref={settingsRef} style={{ position: "relative" }}>
+                    {btn}
+                    {settingsOpen && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "calc(100% + 8px)",
+                          right: 0,
+                          background: "white",
+                          borderRadius: 12,
+                          boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+                          minWidth: 180,
+                          overflow: "hidden",
+                          zIndex: 100,
+                          fontFamily: FONT,
+                        }}
+                      >
+                        <button
+                          onClick={handleSignOut}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "#fff0f6"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "white"; }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            width: "100%",
+                            padding: "12px 16px",
+                            background: "white",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "#e91e8c",
+                            fontFamily: FONT,
+                            transition: "background 0.15s ease",
+                          }}
+                        >
+                          <LogOutIcon />
+                          Sign Out
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return btn;
             })}
           </div>
         </div>
@@ -168,7 +260,9 @@ export default function HealthSafeNavbar({
     >
       {NAV_ITEMS.map((item) => {
         const isActive = active === item.id;
-        return (
+        const isSettings = item.id === "settings";
+
+        const btn = (
           <button
             key={item.id}
             onClick={() => handleSelect(item.id)}
@@ -182,7 +276,7 @@ export default function HealthSafeNavbar({
               outline: "none",
               cursor: "pointer",
               padding: "4px 8px",
-              color: isActive ? "white" : "rgba(255,255,255,0.6)",
+              color: (isSettings ? settingsOpen : isActive) ? "white" : "rgba(255,255,255,0.6)",
               transition: "color 0.2s ease",
               flex: 1,
               minWidth: 0,
@@ -197,7 +291,7 @@ export default function HealthSafeNavbar({
                 alignItems: "center",
                 justifyContent: "center",
                 transition: "transform 0.15s ease",
-                transform: isActive ? "scale(1.15)" : "scale(1)",
+                transform: (isSettings ? settingsOpen : isActive) ? "scale(1.15)" : "scale(1)",
               }}
             >
               {item.icon}
@@ -205,7 +299,7 @@ export default function HealthSafeNavbar({
             <span
               style={{
                 fontSize: 10,
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: (isSettings ? settingsOpen : isActive) ? 600 : 400,
                 letterSpacing: "0.01em",
                 lineHeight: 1,
               }}
@@ -214,6 +308,56 @@ export default function HealthSafeNavbar({
             </span>
           </button>
         );
+
+        if (isSettings) {
+          return (
+            <div key={item.id} ref={settingsRef} style={{ position: "relative", flex: 1, display: "flex", justifyContent: "center" }}>
+              {btn}
+              {settingsOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "calc(100% + 12px)",
+                    right: 0,
+                    background: "white",
+                    borderRadius: 12,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+                    minWidth: 170,
+                    overflow: "hidden",
+                    zIndex: 100,
+                    fontFamily: FONT,
+                  }}
+                >
+                  <button
+                    onClick={handleSignOut}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#fff0f6"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "white"; }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "12px 16px",
+                      background: "white",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: "#e91e8c",
+                      fontFamily: FONT,
+                      transition: "background 0.15s ease",
+                    }}
+                  >
+                    <LogOutIcon />
+                    Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        return btn;
       })}
     </nav>
   );
