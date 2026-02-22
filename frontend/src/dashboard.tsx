@@ -427,6 +427,35 @@ const Dashboard: React.FC = () => {
         </div>
 
         {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
+
+        {showScannerModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full relative">
+              <button
+                onClick={stopScanner}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              >
+                <LucideX size={24} />
+              </button>
+              
+              <h2 className="text-[#E73A5B] text-xl font-sf-semibold mb-2 text-center">
+                Scan Doctor's QR Code
+              </h2>
+              <p className="text-gray-500 text-sm mb-6 text-center">
+                Point your camera at the doctor's QR code to connect
+              </p>
+              
+              <div id="qr-reader" className="w-full mb-6" />
+              
+              <button
+                onClick={stopScanner}
+                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-3 font-sf-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
