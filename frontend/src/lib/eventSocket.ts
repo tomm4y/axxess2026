@@ -67,6 +67,16 @@ type ConnectedEvent = {
   userId: string
 }
 
+type RecordingStartedEvent = {
+  type: 'recording_started'
+  sessionId: string
+}
+
+type RecordingStoppedEvent = {
+  type: 'recording_stopped'
+  sessionId: string
+}
+
 type ServerMessage =
   | SessionInviteEvent
   | RoomCreatedEvent
@@ -77,6 +87,8 @@ type ServerMessage =
   | ReadyEvent
   | UtteranceEvent
   | ConnectedEvent
+  | RecordingStartedEvent
+  | RecordingStoppedEvent
 
 type Handler<T> = (event: T) => void
 
@@ -111,6 +123,8 @@ export class EventSocket {
     ready: new Set<Handler<ReadyEvent>>(),
     utterance: new Set<Handler<UtteranceEvent>>(),
     connected: new Set<Handler<ConnectedEvent>>(),
+    recording_started: new Set<Handler<RecordingStartedEvent>>(),
+    recording_stopped: new Set<Handler<RecordingStoppedEvent>>(),
   }
 
   private getWsUrl(): string {
@@ -251,7 +265,7 @@ export class EventSocket {
     return Promise.reject(new Error('No userId set'))
   }
 
-  private register<K extends keyof typeof this.handlers>(
+  private registerHandler<K extends keyof typeof this.handlers>(
     eventType: K,
     handler: Handler<unknown>
   ): Unsubscribe {
@@ -260,46 +274,53 @@ export class EventSocket {
     return () => handlers.delete(handler)
   }
 
-  register(handler: (event: any) => void): Unsubscribe {
+  registerOnAny(handler: (event: any) => void): Unsubscribe {
     const wrappedHandler = (event: unknown) => handler(event)
-    Object.values(this.handlers).forEach(set => set.add(wrappedHandler))
-    return () => Object.values(this.handlers).forEach(set => set.delete(wrappedHandler))
+    const handlers = ['recording_started', 'recording_stopped'] as const
+    handlers.forEach(type => {
+      const set = this.handlers[type as keyof typeof this.handlers] as Set<Handler<unknown>>
+      if (set) set.add(wrappedHandler)
+    })
+    return () => handlers.forEach(type => {
+      const set = this.handlers[type as keyof typeof this.handlers] as Set<Handler<unknown>>
+      if (set) set.delete(wrappedHandler)
+    })
   }
 
   registerOnInvite(handler: Handler<SessionInviteEvent>): Unsubscribe {
-    return this.register('session_invite', handler as Handler<unknown>)
+    return this.registerHandler('session_invite', handler as Handler<unknown>)
   }
 
   registerOnRoomCreated(handler: Handler<RoomCreatedEvent>): Unsubscribe {
-    return this.register('room_created', handler as Handler<unknown>)
+    return this.registerHandler('room_created', handler as Handler<unknown>)
   }
 
   registerOnSessionStarted(handler: Handler<SessionStartedEvent>): Unsubscribe {
-    return this.register('session_started', handler as Handler<unknown>)
+    return this.registerHandler('session_started', handler as Handler<unknown>)
   }
 
   registerOnTranscript(handler: Handler<TranscriptEvent>): Unsubscribe {
-    return this.register('transcript', handler as Handler<unknown>)
+    return this.registerHandler('transcript', handler as Handler<unknown>)
   }
 
   registerOnError(handler: Handler<ErrorEvent>): Unsubscribe {
-    return this.register('error', handler as Handler<unknown>)
+    return this.registerHandler('error', handler as Handler<unknown>)
   }
 
   registerOnStopped(handler: Handler<StoppedEvent>): Unsubscribe {
-    return this.register('stopped', handler as Handler<unknown>)
+    return this.registerHandler('stopped', handler as Handler<unknown>)
   }
 
   registerOnReady(handler: Handler<ReadyEvent>): Unsubscribe {
-    return this.register('ready', handler as Handler<unknown>)
+    return this.registerHandler('ready', handler as Handler<unknown>)
   }
 
   registerOnUtterance(handler: Handler<UtteranceEvent>): Unsubscribe {
-    return this.register('utterance', handler as Handler<unknown>)
+    return this.registerHandler('utterance', handler as Handler<unknown>)
   }
 
   registerOnConnected(handler: Handler<ConnectedEvent>): Unsubscribe {
-    return this.register('connected', handler as Handler<unknown>)
+    return this.registerHandler('connected', handler as Handler<unknown>)
   }
 
   respondToInvite(accept: boolean): void {

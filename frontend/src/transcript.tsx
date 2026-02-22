@@ -189,20 +189,18 @@ const Transcript: React.FC = () => {
       console.log('[Transcript] Deepgram ready');
     });
     
-    const unsubRecordingStarted = eventSocket.register((event) => {
+    const unsubRecordingStarted = eventSocket.registerOnAny((event) => {
       if (event.type === 'recording_started') {
         console.log('[Transcript] Recording started event received');
         setRecording(true);
       }
-      return () => {};
     });
     
-    const unsubRecordingStopped = eventSocket.register((event) => {
+    const unsubRecordingStopped = eventSocket.registerOnAny((event) => {
       if (event.type === 'recording_stopped') {
         console.log('[Transcript] Recording stopped event received');
         setRecording(false);
       }
-      return () => {};
     });
     
     return () => {
