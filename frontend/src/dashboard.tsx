@@ -319,26 +319,26 @@ const Dashboard: React.FC = () => {
   const handlePersonClick = (_person: Person) => navigate('/transcript');
   const primaryAction = isClinician ? handleShowQRCode : handleScanQRCode;
 
-  // ── Mobile (pixel-faithful to original) ────────────────────────────────────
+  // ── Mobile ────────────────────────────────────
 
   if (!isDesktop) {
     return (
-    <div style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column", background: "#fdf6fa" }}>
+    <div className='justify-center' style={{ minHeight: "100vh", minWidth: "100vw", fontFamily: "SF-Pro-Display-Semibold, sans-serif", display: "flex", flexDirection: "column"}}>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
         {/* Decorative Background Blobs */}
-        <img src='/Circle.svg' className='w-50 h-50 absolute -right-20 top-1/2 -translate-y-1/2 pointer-events-none' />
-        <img src='/Circle.svg' className='w-60 h-60 absolute -left-25 bottom-20 pointer-events-none' />
+        <img src='/Circle.svg' className='w-50 h-50 absolute -right-20 top-20 translate-y-1/2 pointer-events-none' />
+        <img src='/Circle.svg' className='w-60 h-60 absolute -left-25 bottom-0 pointer-events-none' />
 
         {/* Header */}
-        <header className="fixed w-full max-w-md bg-gradient-to-r flex py-4 items-end to-[#E73A8A] from-[#ED385A] px-4 z-20">
+        <header className="fixed top-0 w-full max-w-md bg-gradient-to-r flex py-4 items-end to-[#E73A8A] from-[#ED385A] px-4 z-20">
           <div className="flex mt-2 h-full text-white text-2xl font-semibold w-40">
             <img src='/Logo.svg' alt="Logo" />
           </div>
         </header>
 
         {/* Main Content Area */}
-        <main className="flex flex-col overflow-y-auto mt-20 px-5 pt-4 pb-24 relative z-10">
+        <main className="flex flex-col overflow-y-auto mt-20 px-5 pt-4 relative z-10">
 
           <h1 className="text-[#E73A5B] text-xl font-sf-semibold mb-2">
             {isClinician ? 'My Patients' : 'My Doctors'}
@@ -404,27 +404,28 @@ const Dashboard: React.FC = () => {
               ))
             )}
           </div>
+
+          {/* FAB */}
+          <div className="bg-[#FBE4EE] rounded-2xl p-8 flex flex-col items-center text-center z-40">
+            {isClinician ? (
+              <button onClick={handleShowQRCode}
+                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg">
+                <LucideQrCode size={24} />
+                Show Patient Your QR Code
+              </button>
+            ) : (
+              <button onClick={handleScanQRCode} disabled={scanning}
+                className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg disabled:opacity-70">
+                {scanning ? (
+                  <><div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Scanning...</>
+                ) : (
+                  <><LucideQrCode size={24} />Scan Doctor's QR Code</>
+                )}
+              </button>
+            )}
+          </div>
         </main>
 
-        {/* FAB */}
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 max-w-md w-full px-5">
-          {isClinician ? (
-            <button onClick={handleShowQRCode}
-              className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg">
-              <LucideQrCode size={24} />
-              Show Patient Your QR Code
-            </button>
-          ) : (
-            <button onClick={handleScanQRCode} disabled={scanning}
-              className="w-full bg-gradient-to-r from-[#ED385A] to-[#E73A8A] text-white rounded-full py-4 px-6 flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(233,30,140,0.35)] hover:shadow-[0_12px_32px_rgba(233,30,140,0.45)] transition-shadow font-sf-semibold text-lg disabled:opacity-70">
-              {scanning ? (
-                <><div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Scanning...</>
-              ) : (
-                <><LucideQrCode size={24} />Scan Doctor's QR Code</>
-              )}
-            </button>
-          )}
-        </div>
 
         {showQRModal && <QRModal qrCodeData={qrCodeData} qrLoading={qrLoading} onClose={() => setShowQRModal(false)} />}
 
@@ -498,11 +499,11 @@ const Dashboard: React.FC = () => {
       <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: "40px 48px 56px", display: "grid", gridTemplateColumns: "1fr 300px", gap: 28, alignItems: "start" }}>
 
         {/* Left — list */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div className=''>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: "#2d1a2e", letterSpacing: -0.5 }}>
               {isClinician ? "Patient List" : "Your Doctors"}
             </h2>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
             {!loading && persons.length > 0 && (
               <span style={{ fontSize: 13, fontWeight: 700, color: "#cca0bb" }}>
                 {persons.length} {persons.length === 1 ? "person" : "people"}
@@ -550,21 +551,6 @@ const Dashboard: React.FC = () => {
                   ? "Show your QR code to patients to link them to your practice."
                   : "Scan a doctor's QR code to get started with your first consultation."}
               </p>
-              <button onClick={primaryAction} style={{
-                background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
-                color: "white", border: "none", borderRadius: 50,
-                padding: "14px 32px", fontSize: 16, fontWeight: 800,
-                cursor: "pointer", fontFamily: "'Nunito', sans-serif",
-                boxShadow: "0 6px 20px rgba(233,30,140,0.3)",
-                display: "flex", alignItems: "center", gap: 8,
-                transition: "transform 0.2s, box-shadow 0.2s",
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 10px 28px rgba(233,30,140,0.4)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(233,30,140,0.3)"; }}
-              >
-                <LucideQrCode size={18} />
-                {isClinician ? "Show My QR Code" : "Scan QR Code"}
-              </button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -576,7 +562,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Right sidebar */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 50 }}>
 
           {/* QR action card */}
           <div style={{
