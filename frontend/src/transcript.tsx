@@ -1,6 +1,7 @@
 import { LucideMic, LucideArrowLeft, LucideDownload, LucideCopy, LucideUsers } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router';
+import { getCurrentUser } from './lib/api';
 
 // ─── Shared Wave Components ───────────────────────────────────────────────────
 
@@ -42,29 +43,7 @@ const RecordingPill: React.FC<{ recording: boolean }> = ({ recording }) => (
   </div>
 );
 
-const MicButton: React.FC<{ recording: boolean; onClick: () => void; size?: number }> = ({ recording, onClick, size = 72 }) => (
-  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-    <button
-      onClick={onClick}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-      style={{
-        width: size, height: size, borderRadius: "50%",
-        background: recording ? "linear-gradient(135deg, #ff4d7d, #e91e8c)" : "white",
-        border: `3px solid ${recording ? "transparent" : "#f0d0e8"}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: recording ? "0 8px 28px rgba(233,30,140,0.45)" : "0 4px 16px rgba(233,30,140,0.12)",
-        transition: "all 0.25s ease",
-      } as React.CSSProperties}
-    >
-      <LucideMic color={recording ? "white" : "#e91e8c"} size={Math.round(size * 0.39)} />
-    </button>
-    <span style={{ fontSize: 12, fontWeight: 700, color: "#cca0bb", textTransform: "uppercase", letterSpacing: 0.5 }}>
-      {recording ? "Click to stop" : "Click to record"}
-    </span>
-  </div>
-);
+
 
 const TranscriptBox: React.FC<{ recording: boolean; fullHeight?: boolean }> = ({ recording, fullHeight }) => (
   <div style={{
@@ -97,8 +76,47 @@ const TranscriptBox: React.FC<{ recording: boolean; fullHeight?: boolean }> = ({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const Transcript: React.FC = () => {
+
+  interface Person {
+  id: string;
+  name: string;
+  specialty?: string;
+  imageUrl?: string;
+}
+
+interface UserData {
+  id: string;
+  email: string;
+  name: string;
+  is_clinician: boolean;
+}
   const [recording, setRecording] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  // User state - to determine if clinician or patient
+  const [user, setUser] = useState<UserData | null>(null);
+  const [isClinician, setIsClinician] = useState(false);
+  
+  const [persons, _setPersons] = useState<Person[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUserAndData = async () => {
+      try {
+        const response = await getCurrentUser();
+        if (response?.user) {
+          setUser(response.user);
+          setIsClinician(response.user.is_clinician);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchUserAndData();
+  }, []);
+
 
   useEffect(() => {
     const check = () => setIsDesktop(window.innerWidth >= 768);
@@ -179,8 +197,6 @@ const Transcript: React.FC = () => {
               <TranscriptBox recording={recording} />
             </div>
 
-            {/* Mic */}
-            <MicButton recording={recording} onClick={() => setRecording(!recording)} />
           </div>
 
           {/* Footer wave */}
@@ -257,7 +273,7 @@ const Transcript: React.FC = () => {
             <p style={{ color: "#cca0bb", fontSize: 15, lineHeight: 1.8, fontWeight: 600, fontStyle: "italic", margin: 0 }}>
               {recording
                 ? "Listening… Start speaking to see transcription appear here in real time."
-                : "Click the microphone button on the right to begin recording this session. Transcription will appear here automatically."}
+                : "Wait for the patient to start recording."}
             </p>
           </div>
         </div>
@@ -275,19 +291,11 @@ const Transcript: React.FC = () => {
             <div style={{ width: 64, height: 64, borderRadius: "50%", overflow: "hidden", border: "3px solid white", boxShadow: "0 4px 16px rgba(233,30,140,0.2)" }}>
               <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&h=200&auto=format&fit=crop" alt="Dr. X" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
-            <span style={{ color: "#2d1a2e", fontSize: 14, fontWeight: 800 }}>Dr. X</span>
+            <span style={{ color: "#2d1a2e", fontSize: 14, fontWeight: 800 }}>Patient</span>
             <RecordingPill recording={recording} />
           </div>
 
-          {/* Mic button */}
-          <div style={{
-            background: "white", borderRadius: 20, padding: "24px 16px",
-            border: "2px solid #f0d0e8", width: "100%",
-            boxShadow: "0 4px 20px rgba(233,30,140,0.07)",
-            display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-          }}>
-            <MicButton recording={recording} onClick={() => setRecording(!recording)} size={80} />
-          </div>
+
         </div>
       </div>
 
