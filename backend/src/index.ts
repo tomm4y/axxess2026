@@ -1,11 +1,35 @@
+import { createServer } from "http";
 import express from "express";
 import { getUserByUuid, getUserByEmail, getUserData, getAllSessionsDebug, getSessionsByRoom, getAllRoomsDebug, putSessionTranscript } from "./db";
 import { RoomId, SessionId } from "./types";
+import { S2TService, createS2TWebSocketServer } from "./deepgram";
+import "dotenv/config";
 
 const app = express();
 const port = 3000;
 
 app.use(express.urlencoded({ extended: true }));
+
+const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+if (!deepgramApiKey) {
+  throw new Error("DEEPGRAM_API_KEY environment variable is required");
+}
+
+const logger = {
+  info: (obj: unknown, msg?: string) => console.log(msg ?? "", obj),
+  error: (obj: unknown, msg?: string) => console.error(msg ?? "", obj),
+};
+
+const s2tService = new S2TService(
+  {
+    port,
+    deepgramApiKey,
+    maxSessionMinutes: 30,
+    audio: { encoding: "linear16", sampleRate: 16000, channels: 1 },
+    deepgram: { model: "nova-2", language: "en" },
+  },
+  logger
+);
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -88,6 +112,12 @@ app.post("/debug/transcript_maker", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+const server = createServer(app);
+createS2TWebSocketServer(s2tService, server);
+
+export { s2tService };
+
+server.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
+  console.log(`WebSocket endpoint: ws://localhost:${port}/ws?sessionId={session_id}`);
 });
