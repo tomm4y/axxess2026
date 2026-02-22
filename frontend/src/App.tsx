@@ -1,9 +1,7 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router'
+import { Link } from 'react-router'
 import './App.css'
-import HealthSafeLogin from './login'
-import HealthSafeSignUp from './signup'
 
-function LandingPage() {
+function App() {
   return (
     <div>
       <div className='fixed inset-0'>
@@ -40,18 +38,6 @@ function LandingPage() {
         </Link>
       </div>
     </div>
-  )
-}
-
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<HealthSafeLogin />} />
-        <Route path="/signup" element={<HealthSafeSignUp />} />
-      </Routes>
-    </BrowserRouter>
   )
 }
 
