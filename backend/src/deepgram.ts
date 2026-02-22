@@ -1,7 +1,7 @@
-import crypto from "crypto";
 import type { Server as HttpServer } from "http";
 import WebSocket, { WebSocketServer } from "ws";
-import { SessionId } from "./types";
+import { UserId, RoomId, SessionId } from "./types";
+import { getOrCreateRoom, getRoomById, createSession } from "./db";
 
 export type Role = "Doctor" | "Patient";
 
@@ -24,7 +24,7 @@ export type TranscriptSegment = {
   words?: TranscriptWord[];
 };
 
-export type S2TConfig = {
+export type SockManConfig = {
   port: number;
   deepgramApiKey: string;
   maxSessionMinutes: number;
@@ -44,7 +44,7 @@ export type Logger = {
   error: (obj: unknown, msg?: string) => void;
 };
 
-type DeepgramConn = ReturnType<S2TService["connectDeepgramLive"]>;
+type DeepgramConn = ReturnType<SockMan["connectDeepgramLive"]>;
 
 type SessionRuntime = {
   deepgram: DeepgramConn | null;
@@ -52,33 +52,207 @@ type SessionRuntime = {
   speakerMap: Record<string, Role>;
   transcriptSegments: TranscriptSegment[];
   firstSpeakerSeen: string | null;
+  clinicianUserId: string;
+  patientUserId: string;
 };
 
-export class S2TService {
-  private readonly runtimes = new Map<string, SessionRuntime>();
+type PendingSessionInvite = {
+  roomId: RoomId;
+  creatorId: UserId;
+  inviteeId: UserId;
+  inviteeSocket: WebSocket;
+  clinicianSocket: WebSocket;
+  patientSocket: WebSocket;
+};
+
+export class SockMan {
+  private readonly unassignedSockets = new Map<string, WebSocket>();
+  private readonly assignedSockets = new Map<string, { clinician: WebSocket; patient: WebSocket }>();
+  private readonly sessionRuntimes = new Map<string, SessionRuntime>();
+  private readonly pendingSessionInvites = new Map<string, PendingSessionInvite>();
 
   constructor(
-    public readonly config: S2TConfig,
+    public readonly config: SockManConfig,
     private readonly logger: Logger
   ) {}
 
-  getRuntime(sessionId: SessionId): SessionRuntime | null {
-    return this.runtimes.get(sessionId.toString()) ?? null;
+  hasUnassignedSocket(userId: UserId): boolean {
+    const ws = this.unassignedSockets.get(userId.toString());
+    return ws !== undefined && ws.readyState === WebSocket.OPEN;
+  }
+
+  getUnassignedSocket(userId: UserId): WebSocket | null {
+    const ws = this.unassignedSockets.get(userId.toString());
+    return ws !== undefined && ws.readyState === WebSocket.OPEN ? ws : null;
+  }
+
+  registerUnassignedSocket(userId: UserId, ws: WebSocket): void {
+    const key = userId.toString();
+    const existing = this.unassignedSockets.get(key);
+    if (existing && existing !== ws) {
+      try {
+        existing.close(1000, "replaced by new connection");
+      } catch {
+        // ignore
+      }
+    }
+    this.unassignedSockets.set(key, ws);
+    this.logger.info({ userId: key }, "Socket registered as unassigned");
+  }
+
+  unregisterSocket(userId: UserId): void {
+    const key = userId.toString();
+    this.unassignedSockets.delete(key);
+    this.pendingSessionInvites.delete(key);
+    this.logger.info({ userId: key }, "Socket unregistered");
+  }
+
+  assignSocketsToSession(sessionId: SessionId, clinicianWs: WebSocket, patientWs: WebSocket): void {
+    const key = sessionId.toString();
+    this.assignedSockets.set(key, { clinician: clinicianWs, patient: patientWs });
+    this.logger.info({ sessionId: key }, "Sockets assigned to session");
+  }
+
+  getSessionSockets(sessionId: SessionId): { clinician: WebSocket; patient: WebSocket } | null {
+    return this.assignedSockets.get(sessionId.toString()) ?? null;
+  }
+
+  sendToUser(userId: UserId, message: unknown): boolean {
+    const ws = this.getUnassignedSocket(userId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }
+
+  broadcastToSession(sessionId: SessionId, message: unknown): void {
+    const sockets = this.assignedSockets.get(sessionId.toString());
+    if (!sockets) return;
+    const json = JSON.stringify(message);
+    if (sockets.clinician.readyState === WebSocket.OPEN) {
+      sockets.clinician.send(json);
+    }
+    if (sockets.patient.readyState === WebSocket.OPEN) {
+      sockets.patient.send(json);
+    }
+  }
+
+  async createRoom(patientId: UserId, clinicianId: UserId): Promise<{ roomId: RoomId; success: boolean }> {
+    const patientSocket = this.getUnassignedSocket(patientId);
+    const clinicianSocket = this.getUnassignedSocket(clinicianId);
+
+    const roomId = await getOrCreateRoom(clinicianId, patientId);
+    this.logger.info({ roomId: roomId.toString(), patientId: patientId.toString(), clinicianId: clinicianId.toString() }, "Room created");
+
+    if (patientSocket) {
+      patientSocket.send(JSON.stringify({
+        type: "room_created",
+        roomId: roomId.toString(),
+        clinicianId: clinicianId.toString(),
+      }));
+    }
+
+    if (clinicianSocket) {
+      clinicianSocket.send(JSON.stringify({
+        type: "room_created",
+        roomId: roomId.toString(),
+        patientId: patientId.toString(),
+      }));
+    }
+
+    return { roomId, success: true };
+  }
+
+  async initiateSessionInvite(roomId: RoomId, creatorId: UserId): Promise<boolean> {
+    const room = await getRoomById(roomId);
+    if (!room) {
+      this.logger.info({ roomId: roomId.toString() }, "Room not found");
+      return false;
+    }
+
+    const clinicianId = UserId.create(room.clinician);
+    const patientId = UserId.create(room.patient);
+
+    const clinicianSocket = this.getUnassignedSocket(clinicianId);
+    const patientSocket = this.getUnassignedSocket(patientId);
+
+    if (!clinicianSocket || !patientSocket) {
+      this.logger.info({ roomId: roomId.toString() }, "Both users not connected");
+      return false;
+    }
+
+    const inviteeId = creatorId.toString() === room.clinician ? patientId : clinicianId;
+    const inviteeSocket = creatorId.toString() === room.clinician ? patientSocket : clinicianSocket;
+
+    this.pendingSessionInvites.set(inviteeId.toString(), {
+      roomId,
+      creatorId,
+      inviteeId,
+      inviteeSocket,
+      clinicianSocket,
+      patientSocket,
+    });
+
+    inviteeSocket.send(JSON.stringify({
+      type: "session_invite",
+      roomId: roomId.toString(),
+      creatorId: creatorId.toString(),
+    }));
+
+    return true;
+  }
+
+  async handleSessionInviteResponse(inviteeId: UserId, accept: boolean): Promise<SessionId | null> {
+    const pending = this.pendingSessionInvites.get(inviteeId.toString());
+    if (!pending) {
+      this.logger.info({ inviteeId: inviteeId.toString() }, "No pending session invite found");
+      return null;
+    }
+
+    this.pendingSessionInvites.delete(inviteeId.toString());
+
+    if (!accept) {
+      this.logger.info({ inviteeId: inviteeId.toString() }, "Session invite declined");
+      return null;
+    }
+
+    const sessionId = await createSession(pending.roomId);
+
+    this.assignSocketsToSession(sessionId, pending.clinicianSocket, pending.patientSocket);
+
+    this.unassignedSockets.delete(pending.inviteeId.toString());
+    const creatorIdStr = pending.creatorId.toString();
+    this.unassignedSockets.delete(creatorIdStr);
+
+    this.broadcastToSession(sessionId, {
+      type: "session_started",
+      sessionId: sessionId.toString(),
+      roomId: pending.roomId.toString(),
+    });
+
+    this.logger.info({ sessionId: sessionId.toString() }, "Session created and sockets assigned");
+
+    return sessionId;
+  }
+
+  getSessionRuntime(sessionId: SessionId): SessionRuntime | null {
+    return this.sessionRuntimes.get(sessionId.toString()) ?? null;
   }
 
   getConnectedClients(sessionId: SessionId): WebSocket[] {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     return rt ? Array.from(rt.clients) : [];
   }
 
   hasActiveConnection(sessionId: SessionId): boolean {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     return rt !== undefined && rt !== null && rt.clients.size > 0;
   }
 
-  attachClient(sessionId: SessionId, ws: WebSocket): void {
+  attachClientToRuntime(sessionId: SessionId, ws: WebSocket, userId: string): void {
     const key = sessionId.toString();
-    let rt = this.runtimes.get(key);
+    let rt = this.sessionRuntimes.get(key);
     if (!rt) {
       rt = {
         deepgram: null,
@@ -86,15 +260,17 @@ export class S2TService {
         speakerMap: {},
         transcriptSegments: [],
         firstSpeakerSeen: null,
+        clinicianUserId: "",
+        patientUserId: "",
       };
-      this.runtimes.set(key, rt);
+      this.sessionRuntimes.set(key, rt);
     }
     rt.clients.add(ws);
   }
 
-  detachClient(sessionId: SessionId, ws: WebSocket): void {
+  detachClientFromRuntime(sessionId: SessionId, ws: WebSocket): void {
     const key = sessionId.toString();
-    const rt = this.runtimes.get(key);
+    const rt = this.sessionRuntimes.get(key);
     if (!rt) return;
 
     rt.clients.delete(ws);
@@ -106,23 +282,12 @@ export class S2TService {
         // ignore
       }
       rt.deepgram = null;
-      this.runtimes.delete(key);
-    }
-  }
-
-  broadcastToSession(sessionId: SessionId, message: unknown): void {
-    const rt = this.runtimes.get(sessionId.toString());
-    if (!rt) return;
-    const json = JSON.stringify(message);
-    for (const ws of rt.clients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(json);
-      }
+      this.sessionRuntimes.delete(key);
     }
   }
 
   setSpeakerMap(sessionId: SessionId, mapping: Record<string, Role>): void {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     if (!rt) return;
     rt.speakerMap = { ...rt.speakerMap, ...mapping };
     rt.transcriptSegments = rt.transcriptSegments.map((seg) => ({
@@ -132,7 +297,7 @@ export class S2TService {
   }
 
   autoMapSpeakers(sessionId: SessionId): void {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     if (!rt || !rt.firstSpeakerSeen) {
       throw new Error("No speaker detected yet");
     }
@@ -143,21 +308,26 @@ export class S2TService {
 
   startDeepgram(sessionId: SessionId): void {
     const key = sessionId.toString();
-    let rt = this.runtimes.get(key);
+    const sockets = this.assignedSockets.get(key);
+    if (!sockets) return;
+
+    let rt = this.sessionRuntimes.get(key);
     if (!rt) {
       rt = {
         deepgram: null,
-        clients: new Set(),
+        clients: new Set([sockets.clinician, sockets.patient]),
         speakerMap: {},
         transcriptSegments: [],
         firstSpeakerSeen: null,
+        clinicianUserId: "",
+        patientUserId: "",
       };
-      this.runtimes.set(key, rt);
+      this.sessionRuntimes.set(key, rt);
     }
     if (rt.deepgram) return;
 
     const deepgram = this.connectDeepgramLive((event) => {
-      const sessionRt = this.runtimes.get(key);
+      const sessionRt = this.sessionRuntimes.get(key);
       if (!sessionRt) return;
 
       if (event.type === "result") {
@@ -199,13 +369,13 @@ export class S2TService {
   }
 
   forwardAudio(sessionId: SessionId, audio: WebSocket.RawData): void {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     if (!rt?.deepgram?.ws || rt.deepgram.ws.readyState !== WebSocket.OPEN) return;
     rt.deepgram.ws.send(audio);
   }
 
   stopDeepgram(sessionId: SessionId): void {
-    const rt = this.runtimes.get(sessionId.toString());
+    const rt = this.sessionRuntimes.get(sessionId.toString());
     if (!rt?.deepgram) return;
     try {
       rt.deepgram.close();
@@ -385,17 +555,17 @@ export class S2TService {
   }
 }
 
-function parseWsUrl(reqUrl: string): { sessionId: string } {
+function parseWsUrl(reqUrl: string): { userId: string } {
   const url = new URL(reqUrl, "http://localhost");
-  const sessionId = url.searchParams.get("sessionId") ?? "";
-  return { sessionId };
+  const userId = url.searchParams.get("userId") ?? "";
+  return { userId };
 }
 
 function sendJson(ws: WebSocket, message: unknown): void {
   ws.send(JSON.stringify(message));
 }
 
-export function createS2TWebSocketServer(service: S2TService, httpServer: HttpServer): WebSocketServer {
+export function createSockManWebSocketServer(sockMan: SockMan, httpServer: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on("upgrade", (req, socket, head) => {
@@ -413,25 +583,25 @@ export function createS2TWebSocketServer(service: S2TService, httpServer: HttpSe
   });
 
   wss.on("connection", (ws, req) => {
-    const { sessionId } = parseWsUrl(req.url ?? "/ws");
+    const { userId } = parseWsUrl(req.url ?? "/ws");
 
-    if (!sessionId) {
-      sendJson(ws, { type: "error", message: "sessionId query parameter required" });
+    if (!userId) {
+      sendJson(ws, { type: "error", message: "userId query parameter required" });
       try {
-        ws.close(1008, "missing sessionId");
+        ws.close(1008, "missing userId");
       } catch {
         // ignore
       }
       return;
     }
 
-    const sessionIdObj = SessionId.create(sessionId);
+    const userIdObj = UserId.create(userId);
 
     try {
-      service.attachClient(sessionIdObj, ws);
-      sendJson(ws, { type: "connected", sessionId });
+      sockMan.registerUnassignedSocket(userIdObj, ws);
+      sendJson(ws, { type: "connected", userId });
 
-      const maxDurationMs = service.config.maxSessionMinutes * 60_000;
+      const maxDurationMs = sockMan.config.maxSessionMinutes * 60_000;
       const maxTimer = setTimeout(() => {
         sendJson(ws, { type: "error", message: "Max session duration reached" });
         try {
@@ -454,44 +624,57 @@ export function createS2TWebSocketServer(service: S2TService, httpServer: HttpSe
               return;
             }
 
+            if (parsed.type === "session_invite_response") {
+              const accept = parsed.accept === true;
+              sockMan.handleSessionInviteResponse(userIdObj, accept);
+              return;
+            }
+
             if (parsed.type === "start") {
               if (
-                (parsed.sampleRate && parsed.sampleRate !== service.config.audio.sampleRate) ||
-                (parsed.channels && parsed.channels !== service.config.audio.channels) ||
-                (parsed.format && parsed.format !== service.config.audio.encoding)
+                (parsed.sampleRate && parsed.sampleRate !== sockMan.config.audio.sampleRate) ||
+                (parsed.channels && parsed.channels !== sockMan.config.audio.channels) ||
+                (parsed.format && parsed.format !== sockMan.config.audio.encoding)
               ) {
                 sendJson(ws, {
                   type: "error",
                   message: "Audio format mismatch",
                   details: {
-                    expected: service.config.audio,
+                    expected: sockMan.config.audio,
                     received: parsed,
                   },
                 });
                 return;
               }
 
-              service.startDeepgram(sessionIdObj);
+              const sessionId = parsed.sessionId;
+              if (!sessionId) {
+                sendJson(ws, { type: "error", message: "sessionId required for start" });
+                return;
+              }
+
+              sockMan.startDeepgram(SessionId.create(sessionId));
               return;
             }
 
             if (parsed.type === "stop") {
-              service.stopDeepgram(sessionIdObj);
-              const rt = service.getRuntime(sessionIdObj);
-              sendJson(ws, {
-                type: "stopped",
-                finalTranscriptSummary: {
-                  sessionId,
-                  segmentCount: rt?.transcriptSegments.length ?? 0,
-                },
-              });
+              const sessionId = parsed.sessionId;
+              if (sessionId) {
+                sockMan.stopDeepgram(SessionId.create(sessionId));
+                const rt = sockMan.getSessionRuntime(SessionId.create(sessionId));
+                sendJson(ws, {
+                  type: "stopped",
+                  finalTranscriptSummary: {
+                    sessionId,
+                    segmentCount: rt?.transcriptSegments.length ?? 0,
+                  },
+                });
+              }
               return;
             }
 
             return;
           }
-
-          service.forwardAudio(sessionIdObj, data);
         } catch (err) {
           sendJson(ws, {
             type: "error",
@@ -503,7 +686,7 @@ export function createS2TWebSocketServer(service: S2TService, httpServer: HttpSe
 
       ws.on("close", () => {
         clearTimeout(maxTimer);
-        service.detachClient(sessionIdObj, ws);
+        sockMan.unregisterSocket(userIdObj);
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "WebSocket error";

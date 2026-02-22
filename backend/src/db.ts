@@ -142,3 +142,23 @@ export async function getAllRoomsDebug(): Promise<object[]> {
   const result = await pool.query("select * from rooms");
   return result.rows;
 }
+
+export async function getRoomsByPatient(patient: UserId): Promise<RoomId[]> {
+  const result = await pool.query("select id from rooms where patient = $1", [patient.toString()]);
+  return result.rows.map(row => RoomId.create(row.id));
+}
+
+export async function getRoomById(roomId: RoomId): Promise<{ id: string; clinician: string; patient: string } | null> {
+  const result = await pool.query("select id, clinician, patient from rooms where id = $1", [roomId.toString()]);
+  if (!result.rows[0]) return null;
+  return {
+    id: result.rows[0].id,
+    clinician: result.rows[0].clinician,
+    patient: result.rows[0].patient,
+  };
+}
+
+export async function getRoomsByClinician(clinician: UserId): Promise<RoomId[]> {
+  const result = await pool.query("select id from rooms where clinician = $1", [clinician.toString()]);
+  return result.rows.map(row => RoomId.create(row.id));
+}
