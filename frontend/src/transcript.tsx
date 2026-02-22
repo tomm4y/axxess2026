@@ -1,4 +1,4 @@
-import { LucideMic, LucideArrowLeft, LucideStopCircle, LucideX } from 'lucide-react';
+import { LucideMic, LucideArrowLeft, LucideStopCircle } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router';
 import { getCurrentUser } from './lib/api';
@@ -38,60 +38,6 @@ const formatDuration = (ms: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-// Session Ended Modal Component
-const SessionEndedModal: React.FC<{ 
-  endedByName: string; 
-  onTakeToSummary: () => void;
-}> = ({ endedByName, onTakeToSummary }) => (
-  <div style={{
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    zIndex: 200, padding: 16, backdropFilter: "blur(4px)",
-  }}>
-    <div style={{
-      background: "white", borderRadius: 24, padding: "32px 28px",
-      maxWidth: 360, width: "100%", position: "relative",
-      boxShadow: "0 24px 80px rgba(233,30,140,0.2)",
-      fontFamily: "'Nunito', 'Poppins', sans-serif",
-    }}>
-      <button onClick={() => {}} style={{
-        position: "absolute", top: 16, right: 16,
-        background: "#f9eef5", border: "none", borderRadius: "50%",
-        width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer", visibility: "hidden", // Hide close button since user must take action
-      }}>
-        <LucideX size={18} color="#e91e8c" />
-      </button>
-
-      <div style={{
-        width: 64, height: 64, borderRadius: "50%",
-        background: "linear-gradient(135deg, #ff4d7d, #e91e8c)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        margin: "0 auto 20px",
-      }}>
-        <LucideStopCircle size={32} color="white" />
-      </div>
-
-      <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 900, color: "#E73A5B", textAlign: "center", letterSpacing: -0.5 }}>
-        Session Ended
-      </h2>
-      <p style={{ margin: "0 0 24px", fontSize: 14, fontWeight: 600, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
-        <strong style={{ color: "#2d1a2e" }}>{endedByName}</strong> has ended the session. Your consultation summary will be available shortly.
-      </p>
-
-      <button onClick={onTakeToSummary} style={{
-        width: "100%", background: "linear-gradient(to right, #ED385A, #E73A8A)",
-        color: "white", border: "none", borderRadius: 50,
-        padding: "14px 0", fontSize: 16, fontWeight: 800,
-        cursor: "pointer", fontFamily: "'Nunito', sans-serif",
-        boxShadow: "0 4px 14px rgba(233,30,140,0.3)",
-      }}>
-        Take me to my summary
-      </button>
-    </div>
-  </div>
-);
-
 const Transcript: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -105,9 +51,6 @@ const Transcript: React.FC = () => {
   const [sessionActive, setSessionActive] = useState(false);
   const [segments, setSegments] = useState<TranscriptSegmentData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showSessionEndedModal, setShowSessionEndedModal] = useState(false);
-  const [sessionEndedBy, setSessionEndedBy] = useState('');
-  const [user, setUser] = useState<any>(null);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -193,14 +136,32 @@ const Transcript: React.FC = () => {
           startMs: event.payload.startMs,
         };
 
-        const existingIndex = prev.findIndex(seg => seg.startMs === event.payload.startMs);
+        const updated = [...prev];
+        const existingIndex = typeof event.payload.startMs === 'number'
+          ? updated.findIndex(seg => seg.startMs === event.payload.startMs)
+          : -1;
+
         if (existingIndex >= 0) {
-          const clone = [...prev];
-          clone[existingIndex] = nextSegment;
-          return clone;
+          updated[existingIndex] = nextSegment;
+          return updated;
         }
 
-        return [...prev, nextSegment].sort((a, b) => a.startMs - b.startMs);
+        if (!event.payload.isFinal) {
+          const last = updated[updated.length - 1];
+          if (last && !last.isFinal && last.role === event.payload.role) {
+            updated[updated.length - 1] = nextSegment;
+            return updated;
+          }
+          return [...updated, nextSegment];
+        }
+
+        const last = updated[updated.length - 1];
+        if (last && !last.isFinal && last.role === event.payload.role) {
+          updated[updated.length - 1] = nextSegment;
+          return updated;
+        }
+
+        return [...updated, nextSegment];
       });
     });
     
@@ -220,15 +181,8 @@ const Transcript: React.FC = () => {
       }
     });
     
-    const unsubSessionEnded = eventSocket.registerOnSessionEnded((event) => {
-      console.log('[Transcript] Session ended:', event);
-      if (event.sessionId === sessionId) {
-        setSessionEndedBy(event.endedByName);
-        setShowSessionEndedModal(true);
-        setSessionActive(false);
-        setRecording(false);
-        setRecordingPaused(false);
-      }
+    const unsubSessionEnded = eventSocket.registerOnSessionEnded(() => {
+      console.log('[Transcript] Session ended');
     });
     
     return () => {
@@ -788,16 +742,6 @@ const Transcript: React.FC = () => {
           </div>
         )}
 
-        {showSessionEndedModal && (
-          <SessionEndedModal 
-            endedByName={sessionEndedBy}
-            onTakeToSummary={() => {
-              // TODO: Navigate to summary page when implemented
-              console.log('Navigate to summary for session:', sessionId);
-              setShowSessionEndedModal(false);
-            }}
-          />
-        )}
       </div>
 
       <footer style={{ background: "#2d1a2e", padding: "40px 48px 32px" }}>
@@ -805,17 +749,6 @@ const Transcript: React.FC = () => {
           <img src="/Logo.svg" alt="HealthSafe" style={{ height: 28, filter: "brightness(0) invert(1)" }} />
         </div>
       </footer>
-
-      {showSessionEndedModal && (
-        <SessionEndedModal 
-          endedByName={sessionEndedBy}
-          onTakeToSummary={() => {
-            // TODO: Navigate to summary page when implemented
-            console.log('Navigate to summary for session:', sessionId);
-            setShowSessionEndedModal(false);
-          }}
-        />
-      )}
     </div>
   );
 };
