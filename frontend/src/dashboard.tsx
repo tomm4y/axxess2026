@@ -1,5 +1,5 @@
 
-import { LucideQrCode, LucideUser, LucideX } from 'lucide-react';
+import { LucideQrCode, LucideUser, LucideX, LucideChevronRight } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentUser } from './lib/api';
